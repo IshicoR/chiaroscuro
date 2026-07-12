@@ -1,4 +1,4 @@
 bind_addr = "0.0.0.0:35565"
 server_addr = "127.0.0.1:35565"
 require_registration = false
-mock_telemetry = true
+mock_telemetry = false
