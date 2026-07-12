@@ -1,0 +1,80 @@
+[workspace]
+resolver = "3"
+members = [
+    "chiaro-rs/desktop",
+    "chiaro-rs/ac-udp",
+    "chiaro-rs/telemetry"
+]
+
+[workspace.package]
+version = "0.0.1"
+authors = ["Ryuji Ishimi"]
+edition = "2024"
+rust-version = "1.96"
+publish = true
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+chiaroscuro-desktop = { version = "0.0.1", path = "chiaro-rs/desktop" }
+chiaroscuro-ac-udp = { version = "0.0.1", path = "chiaro-rs/ac-udp" }
+chiaroscuro-telemetry = { version = "0.0.1", path = "chiaro-rs/telemetry" }
+anyhow = "1.0.103"
+async-channel = "2.5.0"
+config = "0.15.25"
+dotenvy = "0.15"
+iced = "0.14.0"
+iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
+iced_fonts = { version = "0.3.0", default-features = false, features = ["lucide"] }
+iced_plot = "0.5.0"
+rpmalloc = "0.2.2"
+serde = { version = "1.0.228", features = ["derive"] }
+smol = "2.0.2"
+thiserror = "2.0.18"
+winapi = { version = "0.3.9", features = [
+    "handleapi",
+    "memoryapi",
+    "processthreadsapi",
+    "winbase",
+    "winnt",
+] }
+
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+dead_code = "warn"
+
+[workspace.lints.clippy]
+type-complexity = "allow"
+map-entry = "allow"
+large-enum-variant = "allow"
+result_large_err = "allow"
+semicolon_if_nothing_returned = "deny"
+trivially-copy-pass-by-ref = "deny"
+match-wildcard-for-single-variants = "deny"
+redundant-closure-for-method-calls = "deny"
+filter_map_next = "deny"
+manual_let_else = "deny"
+unused_async = "deny"
+from_over_into = "deny"
+needless_borrow = "deny"
+useless_conversion = "deny"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = "debuginfo"
+overflow-checks = false
+lto = "fat"
+panic = "unwind"
+codegen-units = 1
+incremental = false
+
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+strip = false
+overflow-checks = true
+lto = "off"
+panic = "unwind"
+codegen-units = 256
+incremental = true

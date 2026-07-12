@@ -1,0 +1,26 @@
+[package]
+name = "chiaroscuro-desktop"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "chiaro-desktop"
+path = "src/desktop.rs"
+
+[dependencies]
+chiaroscuro-telemetry = { workspace = true }
+config = { workspace = true }
+iced = { workspace = true }
+iced_aw = { workspace = true }
+iced_fonts = { workspace = true }
+iced_plot = { workspace = true }
+rpmalloc = { workspace = true }
+serde = { workspace = true }
+smol = { workspace = true }

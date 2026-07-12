@@ -1,0 +1,28 @@
+[package]
+name = "chiaroscuro-ac-udp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "chiaro-ac-udp"
+path = "src/udp.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-channel = { workspace = true }
+chiaroscuro-telemetry = { workspace = true }
+config = { workspace = true }
+rpmalloc = { workspace = true }
+serde = { workspace = true }
+smol = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true }

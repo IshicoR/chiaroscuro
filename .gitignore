@@ -1,0 +1,26 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and databases
+*.log
+*.sqlite
+
+# Binary files
+*.exe
+*.dll
+*.so
+*.dylib
+*.wasm
+
+# Coverage
+*.lcov
+
+# Documentation
+ACSharedMemoryDocumentation.pdf
