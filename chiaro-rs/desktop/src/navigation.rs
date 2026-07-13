@@ -6,6 +6,16 @@ pub enum Page {
     About,
 }
 
+impl Page {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Dashboard => "Dashboard",
+            Self::Settings => "Settings",
+            Self::About => "About",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Navigation {
     current: Page,

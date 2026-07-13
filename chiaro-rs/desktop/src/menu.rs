@@ -3,7 +3,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     event::{self, Status},
     mouse,
-    widget::{button, container, row, text, tooltip},
+    widget::{button, row, text, tooltip},
     window,
 };
 use iced_aw::{
@@ -17,12 +17,12 @@ use crate::{action::Action, appearance, navigation::Page};
 const DROP_DOWN_WIDTH: f32 = 190.0;
 
 #[derive(Debug, Clone, Default)]
-pub struct State {
+pub struct MenuState {
     expanded: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Message {
+pub enum MenuMessage {
     ToggleExpanded,
     Dismiss,
     MenuInteraction,
@@ -31,33 +31,33 @@ pub enum Message {
     Exit,
 }
 
-pub fn update(state: &mut State, message: Message) -> Option<Action> {
+pub fn update(state: &mut MenuState, message: MenuMessage) -> Option<Action> {
     match message {
-        Message::ToggleExpanded => {
+        MenuMessage::ToggleExpanded => {
             state.expanded = !state.expanded;
             None
         },
-        Message::Dismiss => {
+        MenuMessage::Dismiss => {
             state.expanded = false;
             None
         },
-        Message::MenuInteraction => None,
-        Message::Select(page) => {
+        MenuMessage::MenuInteraction => None,
+        MenuMessage::Select(page) => {
             state.expanded = false;
             Some(Action::Navigate(page))
         },
-        Message::Back => {
+        MenuMessage::Back => {
             state.expanded = false;
             Some(Action::Back)
         },
-        Message::Exit => {
+        MenuMessage::Exit => {
             state.expanded = false;
             Some(Action::CloseWindow)
         },
     }
 }
 
-pub fn subscription(state: &State) -> Subscription<Message> {
+pub fn subscription(state: &MenuState) -> Subscription<MenuMessage> {
     if !state.expanded {
         return Subscription::none();
     }
@@ -66,22 +66,18 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             if status == Status::Ignored =>
         {
-            Some(Message::Dismiss)
+            Some(MenuMessage::Dismiss)
         },
-        Event::Window(window::Event::Unfocused) => Some(Message::Dismiss),
+        Event::Window(window::Event::Unfocused) => Some(MenuMessage::Dismiss),
         _ => None,
     })
 }
 
-pub fn is_expanded(state: &State) -> bool {
+pub fn is_expanded(state: &MenuState) -> bool {
     state.expanded
 }
 
-pub fn dismiss(state: &mut State) {
-    state.expanded = false;
-}
-
-pub fn view(state: &State, current: Page, can_go_back: bool) -> Element<'_, Message> {
+pub fn view(state: &MenuState, current: Page, can_go_back: bool) -> Element<'_, MenuMessage> {
     let expanded = state.expanded;
     let toggle = tooltip(
         button(
@@ -94,7 +90,7 @@ pub fn view(state: &State, current: Page, can_go_back: bool) -> Element<'_, Mess
         .height(appearance::MENU_BUTTON_SIZE)
         .padding(0)
         .style(move |theme, status| appearance::menu_toggle(theme, status, expanded))
-        .on_press(Message::ToggleExpanded),
+        .on_press(MenuMessage::ToggleExpanded),
         text(if state.expanded {
             "Hide menu"
         } else {
@@ -104,28 +100,25 @@ pub fn view(state: &State, current: Page, can_go_back: bool) -> Element<'_, Mess
         tooltip::Position::Bottom,
     );
 
-    let mut menu_row = row![toggle]
-        .align_y(Vertical::Center)
-        .spacing(4)
-        .height(appearance::TITLE_BAR_HEIGHT);
+    let mut menu_row = row![toggle].align_y(Vertical::Center).spacing(4);
 
     if state.expanded {
-        let file = drop_down(menu_items!((menu_item("Exit", Message::Exit))));
+        let file = drop_down(menu_items!((menu_item("Exit", MenuMessage::Exit))));
         let view = drop_down(menu_items!(
-            (menu_item_maybe("Back", can_go_back.then_some(Message::Back))),
+            (menu_item_maybe("Back", can_go_back.then_some(MenuMessage::Back))),
             (menu_item(
-                page_label("Dashboard", Page::Dashboard, current),
-                Message::Select(Page::Dashboard)
+                page_label(Page::Dashboard, current),
+                MenuMessage::Select(Page::Dashboard)
             )),
             (menu_item(
-                page_label("Settings", Page::Settings, current),
-                Message::Select(Page::Settings)
+                page_label(Page::Settings, current),
+                MenuMessage::Select(Page::Settings)
             )),
         ));
         let help = drop_down(menu_items!(
             (menu_item(
-                page_label("About", Page::About, current),
-                Message::Select(Page::About)
+                page_label(Page::About, current),
+                MenuMessage::Select(Page::About)
             ))
         ));
 
@@ -141,13 +134,12 @@ pub fn view(state: &State, current: Page, can_go_back: bool) -> Element<'_, Mess
         menu_row = menu_row.push(menus);
     }
 
-    container(menu_row)
-        .height(appearance::TITLE_BAR_HEIGHT)
-        .style(appearance::title_bar)
-        .into()
+    menu_row.into()
 }
 
-fn drop_down(items: Vec<Item<'_, Message, Theme, Renderer>>) -> Menu<'_, Message, Theme, Renderer> {
+fn drop_down(
+    items: Vec<Item<'_, MenuMessage, Theme, Renderer>>,
+) -> Menu<'_, MenuMessage, Theme, Renderer> {
     Menu::new(items)
         .width(DROP_DOWN_WIDTH)
         .offset(6.0)
@@ -155,22 +147,22 @@ fn drop_down(items: Vec<Item<'_, Message, Theme, Renderer>>) -> Menu<'_, Message
         .spacing(3.0)
 }
 
-fn menu_root(label: &str) -> Element<'_, Message> {
+fn menu_root(label: &str) -> Element<'_, MenuMessage> {
     button(text(label).size(13))
         .padding([6, 10])
         .style(appearance::menu_button)
-        .on_press(Message::MenuInteraction)
+        .on_press(MenuMessage::MenuInteraction)
         .into()
 }
 
-fn menu_item(label: impl Into<String>, message: Message) -> Element<'static, Message> {
+fn menu_item(label: impl Into<String>, message: MenuMessage) -> Element<'static, MenuMessage> {
     menu_item_maybe(label, Some(message))
 }
 
 fn menu_item_maybe(
     label: impl Into<String>,
-    message: Option<Message>,
-) -> Element<'static, Message> {
+    message: Option<MenuMessage>,
+) -> Element<'static, MenuMessage> {
     button(text(label.into()).size(13).width(Length::Fill))
         .width(Length::Fill)
         .padding([7, 10])
@@ -179,7 +171,8 @@ fn menu_item_maybe(
         .into()
 }
 
-fn page_label(label: &str, page: Page, current: Page) -> String {
+fn page_label(page: Page, current: Page) -> String {
+    let label = page.title();
     if page == current {
         format!("{label}  •")
     } else {
@@ -189,25 +182,25 @@ fn page_label(label: &str, page: Page, current: Page) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, State, is_expanded, update};
+    use super::{MenuMessage, MenuState, is_expanded, update};
     use crate::navigation::Page;
 
     #[test]
     fn dismiss_closes_the_expanded_menu() {
-        let mut state = State::default();
-        update(&mut state, Message::ToggleExpanded);
+        let mut state = MenuState::default();
+        update(&mut state, MenuMessage::ToggleExpanded);
 
-        update(&mut state, Message::Dismiss);
+        update(&mut state, MenuMessage::Dismiss);
 
         assert!(!is_expanded(&state));
     }
 
     #[test]
     fn selecting_a_page_closes_the_expanded_menu() {
-        let mut state = State::default();
-        update(&mut state, Message::ToggleExpanded);
+        let mut state = MenuState::default();
+        update(&mut state, MenuMessage::ToggleExpanded);
 
-        update(&mut state, Message::Select(Page::Settings));
+        update(&mut state, MenuMessage::Select(Page::Settings));
 
         assert!(!is_expanded(&state));
     }

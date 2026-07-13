@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use iced::{
-    Color, Element, Length, Task,
+    Color, Element, Length, Subscription,
     widget::{button, column, container, row, scrollable, text},
 };
 use iced_plot::{LineStyle, PlotUiMessage};
@@ -7,64 +9,82 @@ use iced_plot::{LineStyle, PlotUiMessage};
 use crate::{
     action::Action,
     appearance,
-    session::{ConnectionStatus, Session},
+    session::{ConnectionStatus, HISTORY_WINDOW, Session},
     widget::telemetry::{
         AxisSpec, LineSeries, TimeSeriesChart, TimeSeriesSpec, chart_card, metric_card,
     },
 };
 
 const CHART_HEIGHT: f32 = 280.0;
+const REFRESH_INTERVAL: Duration = Duration::from_millis(33);
 
 #[derive(Debug)]
-pub struct State {
+pub struct DashboardState {
     pedal_chart: TimeSeriesChart,
     dynamics_chart: TimeSeriesChart,
     tyre_chart: TimeSeriesChart,
+    rendered_packets: u64,
 }
 
-impl Default for State {
+impl Default for DashboardState {
     fn default() -> Self {
         Self {
             pedal_chart: build_pedal_chart(),
             dynamics_chart: build_dynamics_chart(),
             tyre_chart: build_tyre_chart(),
+            rendered_packets: 0,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum DashboardMessage {
     ToggleConnection,
+    Refresh,
     PedalPlot(PlotUiMessage),
     DynamicsPlot(PlotUiMessage),
     TyrePlot(PlotUiMessage),
 }
 
 pub fn update(
-    state: &mut State,
+    state: &mut DashboardState,
     session: &Session,
-    message: Message,
-) -> (Task<Message>, Option<Action>) {
-    let action = match message {
-        Message::ToggleConnection => Some(Action::SetConnected(!session.wants_connection())),
-        Message::PedalPlot(message) => {
+    message: DashboardMessage,
+) -> Option<Action> {
+    match message {
+        DashboardMessage::ToggleConnection => {
+            Some(Action::SetConnected(!session.wants_connection()))
+        },
+        DashboardMessage::Refresh => {
+            if state.rendered_packets != session.packets_received() {
+                sync_telemetry(state, session);
+            }
+            None
+        },
+        DashboardMessage::PedalPlot(message) => {
             state.pedal_chart.update(message);
             None
         },
-        Message::DynamicsPlot(message) => {
+        DashboardMessage::DynamicsPlot(message) => {
             state.dynamics_chart.update(message);
             None
         },
-        Message::TyrePlot(message) => {
+        DashboardMessage::TyrePlot(message) => {
             state.tyre_chart.update(message);
             None
         },
-    };
-
-    (Task::none(), action)
+    }
 }
 
-pub fn sync_telemetry(state: &mut State, session: &Session) {
+pub fn subscription(active: bool) -> Subscription<DashboardMessage> {
+    if active {
+        iced::time::every(REFRESH_INTERVAL).map(|_| DashboardMessage::Refresh)
+    } else {
+        Subscription::none()
+    }
+}
+
+pub fn sync_telemetry(state: &mut DashboardState, session: &Session) {
     state
         .pedal_chart
         .set_series_points(0, &session.points(|sample| sample.throttle * 100.0));
@@ -85,9 +105,11 @@ pub fn sync_telemetry(state: &mut State, session: &Session) {
             &session.points(|sample| sample.tyre_core_temperature_c[wheel]),
         );
     }
+
+    state.rendered_packets = session.packets_received();
 }
 
-pub fn view<'a>(state: &'a State, session: &'a Session) -> Element<'a, Message> {
+pub fn view<'a>(state: &'a DashboardState, session: &'a Session) -> Element<'a, DashboardMessage> {
     let latest = session.latest().copied().unwrap_or_default();
     let (connection_label, connection_color) = match session.connection() {
         ConnectionStatus::Disconnected => ("Disconnected", Color::from_rgb(0.52, 0.55, 0.60)),
@@ -130,7 +152,7 @@ pub fn view<'a>(state: &'a State, session: &'a Session) -> Element<'a, Message> 
     let actions = row![
         button(connection_action)
             .style(appearance::action_button)
-            .on_press(Message::ToggleConnection),
+            .on_press(DashboardMessage::ToggleConnection),
         text(format!(
             "{} · {} packets",
             session.server_addr(),
@@ -143,18 +165,24 @@ pub fn view<'a>(state: &'a State, session: &'a Session) -> Element<'a, Message> 
 
     let pedal_chart = fixed_height(chart_card(
         "Pedal input",
-        "Throttle and brake · rolling 12-second window",
-        state.pedal_chart.view().map(Message::PedalPlot),
+        format!(
+            "Throttle and brake · rolling {}-second window",
+            HISTORY_WINDOW.as_secs()
+        ),
+        state.pedal_chart.view().map(DashboardMessage::PedalPlot),
     ));
     let dynamics_chart = fixed_height(chart_card(
         "Vehicle dynamics",
         "Lateral and longitudinal acceleration",
-        state.dynamics_chart.view().map(Message::DynamicsPlot),
+        state
+            .dynamics_chart
+            .view()
+            .map(DashboardMessage::DynamicsPlot),
     ));
     let tyre_chart = fixed_height(chart_card(
         "Tyre core temperature",
         "Front-left, front-right, rear-left and rear-right",
-        state.tyre_chart.view().map(Message::TyrePlot),
+        state.tyre_chart.view().map(DashboardMessage::TyrePlot),
     ));
 
     scrollable(
@@ -174,7 +202,7 @@ pub fn view<'a>(state: &'a State, session: &'a Session) -> Element<'a, Message> 
     .into()
 }
 
-fn fixed_height<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
+fn fixed_height<'a>(content: Element<'a, DashboardMessage>) -> Element<'a, DashboardMessage> {
     container(content)
         .width(Length::Fill)
         .height(Length::Fixed(CHART_HEIGHT))
@@ -256,7 +284,9 @@ fn build_tyre_chart() -> TimeSeriesChart {
 }
 
 fn time_axis() -> AxisSpec {
-    AxisSpec::new("Time", 0.0, 12.0, |value| format!("{value:.0}s"))
+    AxisSpec::new("Time", 0.0, HISTORY_WINDOW.as_secs_f64(), |value| {
+        format!("{value:.0}s")
+    })
 }
 
 fn placeholder() -> Vec<[f64; 2]> {
@@ -293,7 +323,12 @@ fn format_lap_time(milliseconds: i32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_gear, format_lap_time, format_position};
+    use chiaroscuro_telemetry::TelemetrySample;
+
+    use super::{
+        DashboardMessage, DashboardState, format_gear, format_lap_time, format_position, update,
+    };
+    use crate::session::Session;
 
     #[test]
     fn formats_assetto_corsa_gears() {
@@ -312,5 +347,16 @@ mod tests {
     fn formats_race_position() {
         assert_eq!(format_position(3), "P3");
         assert_eq!(format_position(0), "—");
+    }
+
+    #[test]
+    fn refreshes_charts_only_after_new_packets() {
+        let mut state = DashboardState::default();
+        let mut session = Session::default();
+        session.record_sample(TelemetrySample::default());
+
+        let _action = update(&mut state, &session, DashboardMessage::Refresh);
+
+        assert_eq!(state.rendered_packets, 1);
     }
 }

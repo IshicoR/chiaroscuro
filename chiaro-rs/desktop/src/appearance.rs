@@ -18,11 +18,11 @@ pub enum Mode {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct State {
+pub struct AppearanceState {
     mode: Mode,
 }
 
-impl State {
+impl AppearanceState {
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -110,16 +110,49 @@ pub fn menu_toggle(theme: &Theme, status: button::Status, expanded: bool) -> but
     style
 }
 
-pub fn window_control(theme: &Theme, status: button::Status, destructive: bool) -> button::Style {
+pub fn window_control(
+    theme: &Theme,
+    status: button::Status,
+    destructive: bool,
+    hover_progress: f32,
+) -> button::Style {
     let palette = theme.extended_palette();
-    let mut style = menu_button(theme, status);
+    let base = palette.background.base;
+    let target = if destructive {
+        palette.danger.base
+    } else {
+        palette.background.strong
+    };
+    let progress = if status == button::Status::Pressed {
+        1.0
+    } else {
+        hover_progress.clamp(0.0, 1.0)
+    };
 
-    if destructive && matches!(status, button::Status::Hovered | button::Status::Pressed) {
-        style.background = Some(Background::Color(palette.danger.base.color));
-        style.text_color = palette.danger.base.text;
+    let mut style = button::Style {
+        background: Some(Background::Color(target.color.scale_alpha(progress))),
+        text_color: mix_color(base.text, target.text, progress),
+        border: Border {
+            radius: CORNER_RADIUS.into(),
+            ..Border::default()
+        },
+        ..button::Style::default()
+    };
+
+    if status == button::Status::Disabled {
+        style.text_color = style.text_color.scale_alpha(0.45);
     }
 
     style
+}
+
+fn mix_color(start: Color, end: Color, amount: f32) -> Color {
+    Color {
+        r: start.r + (end.r - start.r) * amount,
+        g: start.g + (end.g - start.g) * amount,
+        b: start.b + (end.b - start.b) * amount,
+        a: start.a + (end.a - start.a) * amount,
+    }
 }
 
 pub fn action_button(theme: &Theme, status: button::Status) -> button::Style {
@@ -130,16 +163,16 @@ pub fn action_button(theme: &Theme, status: button::Status) -> button::Style {
 
 #[cfg(test)]
 mod tests {
-    use super::{Mode, State};
+    use super::{AppearanceState, Mode};
 
     #[test]
     fn light_is_the_default_theme() {
-        assert_eq!(State::default().mode(), Mode::Light);
+        assert_eq!(AppearanceState::default().mode(), Mode::Light);
     }
 
     #[test]
     fn theme_mode_can_be_changed() {
-        let mut state = State::default();
+        let mut state = AppearanceState::default();
 
         state.set_mode(Mode::Dark);
 

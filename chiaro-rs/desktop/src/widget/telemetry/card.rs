@@ -8,12 +8,12 @@ use super::style;
 
 pub fn chart_card<'a, Message: 'a>(
     title: &'a str,
-    subtitle: &'a str,
+    subtitle: impl Into<String>,
     chart: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     container(
         column![
-            column![text(title).size(18), text(subtitle).size(12)].spacing(4),
+            column![text(title).size(18), text(subtitle.into()).size(12)].spacing(4),
             chart.into(),
         ]
         .spacing(16),

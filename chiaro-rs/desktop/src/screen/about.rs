@@ -1,34 +1,32 @@
 use iced::{
-    Element, Task,
+    Element,
     widget::{button, column, text},
 };
 
 use crate::{action::Action, appearance, navigation::Page};
 
 #[derive(Debug, Clone, Default)]
-pub struct State;
+pub struct AboutState;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Message {
+pub enum AboutMessage {
     OpenDashboard,
 }
 
-pub fn update(_state: &mut State, message: Message) -> (Task<Message>, Option<Action>) {
-    let action = match message {
-        Message::OpenDashboard => Action::Navigate(Page::Dashboard),
-    };
-
-    (Task::none(), Some(action))
+pub fn update(_state: &mut AboutState, message: AboutMessage) -> Option<Action> {
+    Some(match message {
+        AboutMessage::OpenDashboard => Action::Navigate(Page::Dashboard),
+    })
 }
 
-pub fn view(_state: &State) -> Element<'_, Message> {
+pub fn view(_state: &AboutState) -> Element<'_, AboutMessage> {
     column![
         text("Chiaroscuro").size(28),
         text("Desktop telemetry interface").size(14),
         text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(14),
         button("Back to dashboard")
             .style(appearance::action_button)
-            .on_press(Message::OpenDashboard),
+            .on_press(AboutMessage::OpenDashboard),
     ]
     .spacing(16)
     .into()

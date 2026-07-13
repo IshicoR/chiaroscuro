@@ -5,7 +5,9 @@ use std::{
 
 use chiaroscuro_telemetry::TelemetrySample;
 
-const HISTORY_WINDOW: Duration = Duration::from_secs(12);
+use crate::configuration::DEFAULT_SERVER_ADDR;
+
+pub const HISTORY_WINDOW: Duration = Duration::from_secs(12);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ConnectionStatus {
@@ -35,7 +37,7 @@ impl Default for Session {
     fn default() -> Self {
         Self {
             connection: ConnectionStatus::Disconnected,
-            server_addr: "127.0.0.1:35565".to_owned(),
+            server_addr: DEFAULT_SERVER_ADDR.to_owned(),
             packets_received: 0,
             latest: None,
             history: VecDeque::new(),
@@ -74,12 +76,19 @@ impl Session {
     }
 
     pub fn set_connection_requested(&mut self, connected: bool) {
+        self.clear_telemetry();
         self.connection = if connected {
             ConnectionStatus::Connecting
         } else {
             ConnectionStatus::Disconnected
         };
         self.last_error = None;
+    }
+
+    fn clear_telemetry(&mut self) {
+        self.packets_received = 0;
+        self.latest = None;
+        self.history.clear();
     }
 
     pub fn mark_waiting(&mut self) {
@@ -162,6 +171,18 @@ mod tests {
         assert_eq!(session.connection(), ConnectionStatus::Connected);
         session.set_connection_requested(false);
         assert_eq!(session.connection(), ConnectionStatus::Disconnected);
+    }
+
+    #[test]
+    fn connection_changes_clear_previous_telemetry() {
+        let mut session = Session::default();
+        session.record_sample(TelemetrySample::default());
+
+        session.set_connection_requested(true);
+
+        assert_eq!(session.packets_received(), 0);
+        assert!(session.latest().is_none());
+        assert!(session.history.is_empty());
     }
 
     #[test]

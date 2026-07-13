@@ -1,13 +1,15 @@
-use std::{io, net::SocketAddr, time::Duration};
+use std::{
+    io,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
 use chiaroscuro_telemetry::{TelemetrySample, decode};
-use config::{Config, ConfigError, File};
 use iced::{
     Subscription,
     futures::{SinkExt, Stream},
     stream,
 };
-use serde::Deserialize;
 use smol::{Timer, future, net::UdpSocket};
 
 const HELLO_PAYLOAD: &[u8] = b"HELLO";
@@ -16,6 +18,7 @@ const REGISTER_PREFIX: &str = "REGISTER ";
 const KEEPALIVE_PAYLOAD: &[u8] = b"KEEPALIVE";
 const CLIENT_TICK: Duration = Duration::from_secs(1);
 const RETRY_DELAY: Duration = Duration::from_secs(2);
+const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -23,30 +26,6 @@ pub enum Event {
     Connected,
     Sample(TelemetrySample),
     Error(String),
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SourceConfig {
-    pub server_addr: String,
-}
-
-impl Default for SourceConfig {
-    fn default() -> Self {
-        Self {
-            server_addr: "127.0.0.1:35565".to_owned(),
-        }
-    }
-}
-
-impl SourceConfig {
-    pub fn load() -> Result<Self, ConfigError> {
-        let defaults = Self::default();
-        Config::builder()
-            .set_default("server_addr", defaults.server_addr)?
-            .add_source(File::with_name("settings").required(false))
-            .build()?
-            .try_deserialize()
-    }
 }
 
 pub fn subscription(server_addr: String) -> Subscription<Event> {
@@ -99,6 +78,7 @@ async fn receive_from_server(
     let mut buffer = vec![0; 65_535];
     let mut registered = false;
     let mut connected = false;
+    let mut last_response = Instant::now();
 
     loop {
         let event = future::race(
@@ -112,6 +92,7 @@ async fn receive_from_server(
 
         match event {
             ReceiveEvent::Datagram(Ok(len)) => {
+                last_response = Instant::now();
                 let payload = &buffer[..len];
                 if let Some(token) = challenge_token(payload) {
                     let registration = format!("{REGISTER_PREFIX}{token}");
@@ -135,6 +116,13 @@ async fn receive_from_server(
             },
             ReceiveEvent::Datagram(Err(error)) => return Err(error),
             ReceiveEvent::Tick => {
+                if last_response.elapsed() >= SERVER_TIMEOUT {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("telemetry server `{server_addr}` stopped responding"),
+                    ));
+                }
+
                 let payload = if registered {
                     KEEPALIVE_PAYLOAD
                 } else {
@@ -160,12 +148,7 @@ enum ReceiveEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceConfig, challenge_token};
-
-    #[test]
-    fn defaults_to_the_local_relay() {
-        assert_eq!(SourceConfig::default().server_addr, "127.0.0.1:35565");
-    }
+    use super::challenge_token;
 
     #[test]
     fn parses_a_challenge_token() {
