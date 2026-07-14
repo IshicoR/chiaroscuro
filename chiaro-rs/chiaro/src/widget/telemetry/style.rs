@@ -1,7 +1,7 @@
 use iced::{Border, Color, Theme, widget::container};
 use iced_plot::{GridStyle, PlotStyle, default_style};
 
-const CARD_RADIUS: f32 = 10.0;
+use crate::appearance::CARD_RADIUS;
 
 pub(super) fn card(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();

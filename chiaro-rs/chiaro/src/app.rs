@@ -10,7 +10,7 @@ use crate::{
     appearance::{self, AppearanceState},
     configuration::DesktopConfig,
     menu::{self, MenuMessage, MenuState},
-    navigation::{Navigation, Page},
+    navigation::{Navigation, Screen},
     screen::{
         about::{self, AboutMessage, AboutState},
         dashboard::{self, DashboardMessage, DashboardState},
@@ -86,7 +86,7 @@ impl Chiaroscuro {
             window::subscription(&self.window).map(AppMessage::Window),
             menu::subscription(&self.menu).map(AppMessage::Menu),
             dashboard::subscription(
-                wants_connection && self.navigation.current() == Page::Dashboard,
+                wants_connection && self.navigation.current() == Screen::Dashboard,
             )
             .map(AppMessage::Dashboard),
             telemetry,
@@ -132,18 +132,18 @@ impl Chiaroscuro {
     }
 
     pub fn view(&self) -> Element<'_, AppMessage> {
-        let page = match self.navigation.current() {
-            Page::Dashboard => {
+        let screen = match self.navigation.current() {
+            Screen::Dashboard => {
                 dashboard::view(&self.dashboard, &self.session).map(AppMessage::Dashboard)
             },
-            Page::Settings => settings::view(
+            Screen::Settings => settings::view(
                 &self.settings,
                 self.appearance.mode(),
                 &self.session,
                 self.configuration_error.as_deref(),
             )
             .map(AppMessage::Settings),
-            Page::About => about::view(&self.about).map(AppMessage::About),
+            Screen::About => about::view(&self.about).map(AppMessage::About),
         };
 
         let application_menu = menu::view(
@@ -153,14 +153,14 @@ impl Chiaroscuro {
         )
         .map(AppMessage::Menu);
 
-        let content = container(page)
+        let content = container(screen)
             .padding(appearance::CONTENT_PADDING)
             .width(Fill)
             .height(Fill)
             .style(appearance::content);
 
         column![
-            window::title_bar(
+            window::view(
                 &self.window,
                 application_menu,
                 !menu::is_expanded(&self.menu),

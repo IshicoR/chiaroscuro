@@ -11,6 +11,7 @@ mod widget;
 mod window;
 
 use app::Chiaroscuro;
+use iced_fonts::LUCIDE_FONT_BYTES;
 
 #[global_allocator]
 static ALLOC: rpmalloc::RpMalloc = rpmalloc::RpMalloc;
@@ -20,8 +21,9 @@ fn main() -> iced::Result {
         .title(Chiaroscuro::title)
         .theme(Chiaroscuro::theme)
         .subscription(Chiaroscuro::subscription)
-        .font(iced_fonts::LUCIDE_FONT_BYTES)
+        .font(LUCIDE_FONT_BYTES)
         .window(window::settings())
+        .antialiasing(true)
         .centered()
         .run()
 }

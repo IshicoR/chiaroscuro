@@ -1,0 +1,7 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "enable_lsp_tasks": true,
+    },
+  },
+}

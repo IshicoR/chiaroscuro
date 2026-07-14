@@ -8,8 +8,8 @@ use iced_plot::{LineStyle, PlotUiMessage};
 
 use crate::{
     action::Action,
-    appearance,
-    session::{ConnectionStatus, HISTORY_WINDOW, Session},
+    appearance::{self, HISTORY_WINDOW},
+    session::{ConnectionStatus, Session},
     widget::telemetry::{
         AxisSpec, LineSeries, TimeSeriesChart, TimeSeriesSpec, chart_card, metric_card,
     },

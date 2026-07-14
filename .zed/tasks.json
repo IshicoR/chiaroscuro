@@ -1,0 +1,8 @@
+[
+  {
+    "label": "cargo clippy",
+    "command": "cargo",
+    "args": ["clippy"],
+    "use_new_terminal": false,
+  },
+]

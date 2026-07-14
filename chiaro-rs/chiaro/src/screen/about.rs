@@ -3,7 +3,7 @@ use iced::{
     widget::{button, column, text},
 };
 
-use crate::{action::Action, appearance, navigation::Page};
+use crate::{action::Action, appearance, navigation::Screen};
 
 #[derive(Debug, Clone, Default)]
 pub struct AboutState;
@@ -15,7 +15,7 @@ pub enum AboutMessage {
 
 pub fn update(_state: &mut AboutState, message: AboutMessage) -> Option<Action> {
     Some(match message {
-        AboutMessage::OpenDashboard => Action::Navigate(Page::Dashboard),
+        AboutMessage::OpenDashboard => Action::Navigate(Screen::Dashboard),
     })
 }
 

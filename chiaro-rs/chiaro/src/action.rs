@@ -1,8 +1,8 @@
-use crate::{appearance, navigation::Page};
+use crate::{appearance, navigation::Screen};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    Navigate(Page),
+    Navigate(Screen),
     Back,
     SetConnected(bool),
     SetTheme(appearance::Mode),

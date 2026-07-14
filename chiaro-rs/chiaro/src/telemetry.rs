@@ -4,7 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use chiaroscuro_telemetry::{TelemetrySample, decode};
 use iced::{
     Subscription,
     futures::{SinkExt, Stream},

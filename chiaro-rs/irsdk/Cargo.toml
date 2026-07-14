@@ -1,5 +1,5 @@
 [package]
-name = "chiaroscuro-desktop"
+name = "chiaroscuro-irsdk"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -11,16 +11,17 @@ license.workspace = true
 workspace = true
 
 [[bin]]
-name = "chiaro-desktop"
-path = "src/desktop.rs"
+name = "chiaro-irsdk"
+path = "src/irsdk.rs"
 
 [dependencies]
-chiaroscuro-telemetry = { workspace = true }
+anyhow = { workspace = true }
+async-channel = { workspace = true }
 config = { workspace = true }
-iced = { workspace = true }
-iced_aw = { workspace = true }
-iced_fonts = { workspace = true }
-iced_plot = { workspace = true }
 rpmalloc = { workspace = true }
 serde = { workspace = true }
 smol = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true }

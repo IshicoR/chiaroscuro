@@ -1,9 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
-    "chiaro-rs/desktop",
-    "chiaro-rs/ac-udp",
-    "chiaro-rs/telemetry"
+    "chiaro-rs/chiaro",
+    "chiaro-rs/irsdk",
 ]
 
 [workspace.package]
@@ -15,9 +14,8 @@ publish = true
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
-chiaroscuro-desktop = { version = "0.0.1", path = "chiaro-rs/desktop" }
-chiaroscuro-ac-udp = { version = "0.0.1", path = "chiaro-rs/ac-udp" }
-chiaroscuro-telemetry = { version = "0.0.1", path = "chiaro-rs/telemetry" }
+chiaroscuro-chiaro = { version = "0.0.1", path = "chiaro-rs/chiaro" }
+chiaroscuro-irsdk = { version = "0.0.1", path = "chiaro-rs/irsdk" }
 anyhow = "1.0.103"
 async-channel = "2.5.0"
 config = "0.15.25"
