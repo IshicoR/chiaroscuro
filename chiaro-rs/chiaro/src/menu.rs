@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use iced::{
     Animation, Background, Border, Color, Element, Event, Length, Renderer, Subscription, Theme,
@@ -20,14 +20,15 @@ use iced_aw::{
 };
 use iced_fonts::lucide;
 
-use crate::{
-    action::Action,
-    appearance::{
-        ANIMATION_FRAME_INTERVAL, CONTROL_TRANSITION_DURATION, DROP_DOWN_WIDTH, ICON_SIZE,
-        MENU_BUTTON_SIZE, MENU_CORNER_RADIUS, TOOLTIP_DELAY,
-    },
-    navigation::Screen,
-};
+use crate::{action::Action, navigation::Screen};
+
+const MENU_BUTTON_SIZE: f32 = 24.0;
+const ICON_SIZE: u32 = 12;
+const MENU_CORNER_RADIUS: f32 = 6.0;
+const DROP_DOWN_WIDTH: f32 = 190.0;
+const CONTROL_TRANSITION_DURATION: Duration = Duration::from_millis(140);
+const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const TOOLTIP_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub struct MenuState {
@@ -177,7 +178,7 @@ pub fn update(state: &mut MenuState, message: MenuMessage) -> Option<Action> {
         },
         MenuMessage::Exit => {
             state.dismiss();
-            Some(Action::CloseWindow)
+            Some(Action::ExitApplication)
         },
         MenuMessage::Hover(control, hovered) => {
             let now = Instant::now();
@@ -456,7 +457,7 @@ mod tests {
     use iced::{Background, Theme, widget::button::Status as ButtonStatus};
 
     use super::{MenuControl, MenuMessage, MenuState, is_expanded, menu_root_style, update};
-    use crate::navigation::Screen;
+    use crate::{action::Action, navigation::Screen};
 
     #[test]
     fn dismiss_closes_the_expanded_menu() {
@@ -476,6 +477,15 @@ mod tests {
         update(&mut state, MenuMessage::Select(Screen::Settings));
 
         assert!(!is_expanded(&state));
+    }
+
+    #[test]
+    fn exit_requests_application_shutdown() {
+        let mut state = MenuState::default();
+
+        let action = update(&mut state, MenuMessage::Exit);
+
+        assert_eq!(action, Some(Action::ExitApplication));
     }
 
     #[test]

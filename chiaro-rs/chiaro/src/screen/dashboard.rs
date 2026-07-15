@@ -8,8 +8,8 @@ use iced_plot::{LineStyle, PlotUiMessage};
 
 use crate::{
     action::Action,
-    appearance::{self, HISTORY_WINDOW},
-    session::{ConnectionStatus, Session},
+    session::{ConnectionStatus, HISTORY_WINDOW, Session},
+    theme,
     widget::telemetry::{
         AxisSpec, LineSeries, TimeSeriesChart, TimeSeriesSpec, chart_card, metric_card,
     },
@@ -151,7 +151,7 @@ pub fn view<'a>(state: &'a DashboardState, session: &'a Session) -> Element<'a, 
 
     let actions = row![
         button(connection_action)
-            .style(appearance::action_button)
+            .style(theme::action_button)
             .on_press(DashboardMessage::ToggleConnection),
         text(format!(
             "{} · {} packets",

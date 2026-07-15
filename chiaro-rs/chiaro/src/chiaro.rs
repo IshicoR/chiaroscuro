@@ -1,12 +1,13 @@
 mod action;
 mod app;
-mod appearance;
 mod configuration;
 mod menu;
 mod navigation;
 mod screen;
 mod session;
 mod telemetry;
+mod theme;
+mod tray;
 mod widget;
 mod window;
 

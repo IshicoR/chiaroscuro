@@ -3,7 +3,7 @@ use iced::{
     widget::{button, column, text},
 };
 
-use crate::{action::Action, appearance, navigation::Screen};
+use crate::{action::Action, navigation::Screen, theme};
 
 #[derive(Debug, Clone, Default)]
 pub struct AboutState;
@@ -25,7 +25,7 @@ pub fn view(_state: &AboutState) -> Element<'_, AboutMessage> {
         text("Desktop telemetry interface").size(14),
         text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(14),
         button("Back to dashboard")
-            .style(appearance::action_button)
+            .style(theme::action_button)
             .on_press(AboutMessage::OpenDashboard),
     ]
     .spacing(16)

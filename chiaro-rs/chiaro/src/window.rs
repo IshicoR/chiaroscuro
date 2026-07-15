@@ -1,24 +1,28 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use iced::{
-    Animation, Background, Border, Color, Element,
+    Animation, Background, Border, Color, Element, Event as IcedEvent,
     Length::Fill,
     Size, Subscription, Task, Theme,
     alignment::{Horizontal, Vertical},
-    time,
+    event, time,
     widget::button,
     widget::{
         self, Text, button::Status as ButtonStatus, container::Style, mouse_area, row, text,
         tooltip,
     },
-    window::{self, Id, Settings},
+    window::{self, Id, Mode, Settings},
 };
 use iced_fonts::lucide;
 
-use crate::appearance::{
-    ANIMATION_FRAME_INTERVAL, APPLICATION_TITLE, BUTTON_CORNER_RADIUS, CONTROL_TRANSITION_DURATION,
-    ICON_SIZE, TITLE_BAR_HEIGHT, TOOLTIP_DELAY, WINDOW_CONTROL_BUTTON_SIZE,
-};
+const APPLICATION_TITLE: &str = "Chiaroscuro";
+const TITLE_BAR_HEIGHT: f32 = 34.0;
+const WINDOW_CONTROL_BUTTON_SIZE: f32 = 24.0;
+const ICON_SIZE: u32 = 12;
+const BUTTON_CORNER_RADIUS: f32 = 24.0;
+const CONTROL_TRANSITION_DURATION: Duration = Duration::from_millis(140);
+const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const TOOLTIP_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub struct WindowState {
@@ -26,6 +30,7 @@ pub struct WindowState {
     maximize_hover: Animation<bool>,
     close_hover: Animation<bool>,
     now: Instant,
+    backgrounded: bool,
 }
 
 impl Default for WindowState {
@@ -35,11 +40,16 @@ impl Default for WindowState {
             maximize_hover: hover_animation(),
             close_hover: hover_animation(),
             now: Instant::now(),
+            backgrounded: false,
         }
     }
 }
 
 impl WindowState {
+    pub fn is_backgrounded(&self) -> bool {
+        self.backgrounded
+    }
+
     fn animation_mut(&mut self, control: WindowControl) -> &mut Animation<bool> {
         match control {
             WindowControl::Minimize => &mut self.minimize_hover,
@@ -67,7 +77,8 @@ pub enum WindowMessage {
     Drag,
     Minimize,
     ToggleMaximize,
-    Close,
+    CloseRequested,
+    Focused,
     Hover(WindowControl, bool),
     AnimationFrame(Instant),
 }
@@ -89,15 +100,32 @@ pub fn subscription(state: &WindowState) -> Subscription<WindowMessage> {
         Subscription::none()
     };
 
-    Subscription::batch([animation])
+    let close_requests = window::close_requests().map(|_| WindowMessage::CloseRequested);
+    let focus_events = event::listen_with(|event, _status, _window| match event {
+        IcedEvent::Window(window::Event::Focused) => Some(WindowMessage::Focused),
+        _ => None,
+    });
+
+    Subscription::batch([animation, close_requests, focus_events])
 }
 
-pub fn update(state: &mut WindowState, msg: WindowMessage) -> Task<WindowMessage> {
+pub fn update(
+    state: &mut WindowState,
+    msg: WindowMessage,
+    can_hide_in_background: bool,
+) -> Task<WindowMessage> {
     match msg {
         WindowMessage::Drag => with_latest(window::drag),
         WindowMessage::Minimize => with_latest(|id| window::minimize(id, true)),
         WindowMessage::ToggleMaximize => with_latest(window::toggle_maximize),
-        WindowMessage::Close => with_latest(window::close),
+        WindowMessage::CloseRequested => {
+            state.backgrounded = true;
+            background(can_hide_in_background)
+        },
+        WindowMessage::Focused => {
+            state.backgrounded = false;
+            Task::none()
+        },
         WindowMessage::Hover(control, hovered) => {
             let now = Instant::now();
             state.now = now;
@@ -140,8 +168,16 @@ pub fn view<'a, AppMessage: Clone + 'a>(
     .into()
 }
 
-pub fn close() -> Task<WindowMessage> {
-    with_latest(window::close)
+pub fn show(state: &mut WindowState) -> Task<WindowMessage> {
+    state.backgrounded = false;
+
+    with_latest(|id| {
+        Task::batch([
+            window::set_mode(id, Mode::Windowed),
+            window::minimize(id, false),
+            window::gain_focus(id),
+        ])
+    })
 }
 
 fn controls(state: &WindowState) -> Element<'_, WindowMessage> {
@@ -169,7 +205,7 @@ fn controls(state: &WindowState) -> Element<'_, WindowMessage> {
             state.now,
             lucide::x().size(ICON_SIZE),
             "Close",
-            WindowMessage::Close,
+            WindowMessage::CloseRequested,
             WindowControl::Close,
             true,
         ),
@@ -261,6 +297,14 @@ fn hover_animation() -> Animation<bool> {
     Animation::new(false).duration(CONTROL_TRANSITION_DURATION)
 }
 
+fn background(can_hide: bool) -> Task<WindowMessage> {
+    if can_hide {
+        with_latest(|id| window::set_mode(id, Mode::Hidden))
+    } else {
+        with_latest(|id| window::minimize(id, true))
+    }
+}
+
 fn with_latest(
     operation: impl Fn(Id) -> Task<WindowMessage> + Send + 'static,
 ) -> Task<WindowMessage> {
@@ -278,10 +322,22 @@ mod tests {
         drop(update(
             &mut state,
             WindowMessage::Hover(WindowControl::Close, true),
+            false,
         ));
 
         assert!(state.close_hover.value());
         assert!(!state.minimize_hover.value());
         assert!(!state.maximize_hover.value());
+    }
+
+    #[test]
+    fn close_request_backgrounds_until_the_window_is_focused() {
+        let mut state = WindowState::default();
+
+        drop(update(&mut state, WindowMessage::CloseRequested, false));
+        assert!(state.is_backgrounded());
+
+        drop(update(&mut state, WindowMessage::Focused, false));
+        assert!(!state.is_backgrounded());
     }
 }

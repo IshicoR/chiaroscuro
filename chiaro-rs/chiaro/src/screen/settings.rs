@@ -5,8 +5,8 @@ use iced::{
 
 use crate::{
     action::Action,
-    appearance::{self, Mode},
     session::{ConnectionStatus, Session},
+    theme::ThemeMode,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -33,9 +33,9 @@ pub enum SettingsMessage {
 pub fn update(state: &mut SettingsState, message: SettingsMessage) -> Option<Action> {
     match message {
         SettingsMessage::SetDark(enabled) => Some(Action::SetTheme(if enabled {
-            Mode::Dark
+            ThemeMode::Dark
         } else {
-            Mode::Light
+            ThemeMode::Light
         })),
         SettingsMessage::SetDiagnostics(enabled) => {
             state.show_diagnostics = enabled;
@@ -46,14 +46,14 @@ pub fn update(state: &mut SettingsState, message: SettingsMessage) -> Option<Act
 
 pub fn view<'a>(
     state: &'a SettingsState,
-    theme: appearance::Mode,
+    theme: ThemeMode,
     session: &'a Session,
     configuration_error: Option<&'a str>,
 ) -> Element<'a, SettingsMessage> {
     let mut content = column![
         text("Settings").size(28),
         text("Appearance").size(18),
-        toggler(theme == appearance::Mode::Dark)
+        toggler(theme == ThemeMode::Dark)
             .label("Dark theme")
             .on_toggle(SettingsMessage::SetDark),
         text("Diagnostics").size(18),

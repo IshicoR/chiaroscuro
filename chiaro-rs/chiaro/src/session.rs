@@ -1,6 +1,11 @@
-use std::{collections::VecDeque, time::Instant};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
-use crate::{appearance::HISTORY_WINDOW, configuration::DEFAULT_SERVER_ADDR};
+use crate::configuration::DEFAULT_SERVER_ADDR;
+
+pub const HISTORY_WINDOW: Duration = Duration::from_secs(12);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ConnectionStatus {

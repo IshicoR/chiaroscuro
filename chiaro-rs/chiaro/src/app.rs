@@ -7,7 +7,6 @@ use iced::{
 
 use crate::{
     action::Action,
-    appearance::{self, AppearanceState},
     configuration::DesktopConfig,
     menu::{self, MenuMessage, MenuState},
     navigation::{Navigation, Screen},
@@ -18,19 +17,24 @@ use crate::{
     },
     session::Session,
     telemetry,
+    theme::{self, ThemeMode},
+    tray,
     window::{self, WindowMessage, WindowState},
 };
+
+const CONTENT_PADDING: f32 = 24.0;
 
 #[derive(Debug, Default)]
 pub struct Chiaroscuro {
     navigation: Navigation,
     session: Session,
-    appearance: AppearanceState,
+    theme_mode: ThemeMode,
     menu: MenuState,
     window: WindowState,
     dashboard: DashboardState,
     settings: SettingsState,
     about: AboutState,
+    tray: tray::TrayState,
     configuration_error: Option<String>,
 }
 
@@ -42,19 +46,25 @@ pub enum AppMessage {
     Settings(SettingsMessage),
     About(AboutMessage),
     Telemetry(telemetry::Event),
+    Tray(tray::Message),
 }
 
 impl Chiaroscuro {
     pub fn new() -> Self {
         let mut app = Self::default();
+        match tray::TrayState::new() {
+            Ok(tray) => app.tray = tray,
+            Err(error) => eprintln!("failed to initialize system tray: {error}"),
+        }
+
         match DesktopConfig::load() {
             Ok(config) => {
                 app.session.set_server_addr(config.server_addr);
-                app.appearance.set_mode(if config.dark_theme {
-                    appearance::Mode::Dark
+                app.theme_mode = if config.dark_theme {
+                    ThemeMode::Dark
                 } else {
-                    appearance::Mode::Light
-                });
+                    ThemeMode::Light
+                };
                 app.settings.set_show_diagnostics(config.show_diagnostics);
             },
             Err(error) => {
@@ -70,7 +80,7 @@ impl Chiaroscuro {
     }
 
     pub fn theme(&self) -> Theme {
-        self.appearance.theme()
+        self.theme_mode.theme()
     }
 
     pub fn subscription(&self) -> Subscription<AppMessage> {
@@ -85,8 +95,11 @@ impl Chiaroscuro {
         Subscription::batch([
             window::subscription(&self.window).map(AppMessage::Window),
             menu::subscription(&self.menu).map(AppMessage::Menu),
+            tray::subscription(&self.tray).map(AppMessage::Tray),
             dashboard::subscription(
-                wants_connection && self.navigation.current() == Screen::Dashboard,
+                wants_connection
+                    && self.navigation.current() == Screen::Dashboard
+                    && !self.window.is_backgrounded(),
             )
             .map(AppMessage::Dashboard),
             telemetry,
@@ -100,7 +113,8 @@ impl Chiaroscuro {
                 self.handle_action(action)
             },
             AppMessage::Window(message) => {
-                window::update(&mut self.window, message).map(AppMessage::Window)
+                window::update(&mut self.window, message, self.tray.is_available())
+                    .map(AppMessage::Window)
             },
             AppMessage::Dashboard(message) => {
                 let action = dashboard::update(&mut self.dashboard, &self.session, message);
@@ -128,6 +142,10 @@ impl Chiaroscuro {
                 }
                 Task::none()
             },
+            AppMessage::Tray(message) => {
+                let action = tray::update(&self.tray, message);
+                self.handle_action(action)
+            },
         }
     }
 
@@ -138,7 +156,7 @@ impl Chiaroscuro {
             },
             Screen::Settings => settings::view(
                 &self.settings,
-                self.appearance.mode(),
+                self.theme_mode,
                 &self.session,
                 self.configuration_error.as_deref(),
             )
@@ -154,10 +172,10 @@ impl Chiaroscuro {
         .map(AppMessage::Menu);
 
         let content = container(screen)
-            .padding(appearance::CONTENT_PADDING)
+            .padding(CONTENT_PADDING)
             .width(Fill)
             .height(Fill)
-            .style(appearance::content);
+            .style(theme::content);
 
         column![
             window::view(
@@ -193,17 +211,18 @@ impl Chiaroscuro {
                 Task::none()
             },
             Action::SetTheme(mode) => {
-                self.appearance.set_mode(mode);
+                self.theme_mode = mode;
                 Task::none()
             },
-            Action::CloseWindow => window::close().map(AppMessage::Window),
+            Action::ShowWindow => window::show(&mut self.window).map(AppMessage::Window),
+            Action::ExitApplication => iced::exit(),
         }
     }
 
     fn save_configuration(&mut self) {
         let config = DesktopConfig {
             server_addr: self.session.server_addr().to_owned(),
-            dark_theme: self.appearance.mode() == appearance::Mode::Dark,
+            dark_theme: self.theme_mode == ThemeMode::Dark,
             show_diagnostics: self.settings.show_diagnostics(),
         };
 
