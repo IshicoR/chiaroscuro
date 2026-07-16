@@ -9,6 +9,12 @@ An iRacing telemetry viewer built with Rust and the Iced GUI framework.
 Chiaroscuro is a real-time telemetry viewer designed exclusively for iRacing. It
 provides a desktop dashboard for live vehicle, session, lap, and tyre telemetry.
 
+<p align="center">
+  <a href="docs/images/dashboard.png">
+    <img src="docs/images/dashboard.png" alt="Chiaroscuro telemetry dashboard" width="100%">
+  </a>
+</p>
+
 ## Project Scope
 
 Chiaroscuro intentionally supports **iRacing only**. Supporting Assetto Corsa,
