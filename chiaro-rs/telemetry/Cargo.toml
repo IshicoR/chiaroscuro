@@ -1,0 +1,18 @@
+[package]
+name = "chiaroscuro-telemetry"
+description = "Telemetry session, lap, comparison, and IBT analysis for Chiaroscuro."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/telemetry.rs"
+
+[dependencies]
+chiaroscuro-irsdk = { workspace = true }

@@ -1,5 +1,6 @@
 [package]
 name = "chiaroscuro-irsdk"
+description = "Rust bindings and data access for the iRacing SDK and IBT telemetry files."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -10,18 +11,14 @@ license.workspace = true
 [lints]
 workspace = true
 
-[[bin]]
-name = "chiaro-irsdk"
+[lib]
 path = "src/irsdk.rs"
 
 [dependencies]
-anyhow = { workspace = true }
-async-channel = { workspace = true }
-config = { workspace = true }
-rpmalloc = { workspace = true }
+bitflags = { workspace = true }
+encoding_rs = { workspace = true }
 serde = { workspace = true }
-smol = { workspace = true }
-thiserror = { workspace = true }
+serde_yaml_ng = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true }

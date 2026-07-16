@@ -1,0 +1,22 @@
+[package]
+name = "chiaro-settings-ui"
+description = "Settings state, updates, and view for the Chiaro desktop application."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/settings-ui.rs"
+
+[dependencies]
+chiaro-actions = { workspace = true }
+chiaro-theme = { workspace = true }
+chiaroscuro-irsdk = { workspace = true }
+chiaroscuro-telemetry = { workspace = true }
+iced = { workspace = true }

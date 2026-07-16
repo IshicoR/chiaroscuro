@@ -1,0 +1,273 @@
+---
+WeekendInfo:
+ TrackName: spielberg gp
+ TrackID: 403
+ TrackLength: 4.28 km
+ TrackLengthOfficial: 4.32 km
+ TrackDisplayName: Red Bull Ring
+ TrackDisplayShortName: Spielberg
+ TrackConfigName: ~
+ TrackCity: Spielberg
+ TrackCountry: Austria
+ TrackAltitude: 677.30 m
+ TrackLatitude: 47.220305 m
+ TrackLongitude: 14.766722 m
+ TrackNorthOffset: 1.5876 rad
+ TrackNumTurns: 9
+ TrackPitSpeedLimit: 80.00 kph
+ TrackType: road course
+ TrackDirection: neutral
+ TrackWeatherType: Static
+ TrackSkies: Clear
+ TrackSurfaceTemp: 38.89 C
+ TrackAirTemp: 23.89 C
+ TrackAirPressure: 27.69 Hg
+ TrackWindVel: 4.02 m/s
+ TrackWindDir: 2.36 rad
+ TrackRelativeHumidity: 55 %
+ TrackFogLevel: 0 %
+ TrackPrecipitation: 0 %
+ TrackCleanup: 1
+ TrackDynamicTrack: 1
+ TrackVersion: 2024.05.22.01
+ SeriesID: 0
+ SeasonID: 0
+ SessionID: 0
+ SubSessionID: 0
+ LeagueID: 0
+ Official: 0
+ RaceWeek: 0
+ EventType: Test
+ Category: Road
+ SimMode: full
+ TeamRacing: 0
+ MinDrivers: 0
+ MaxDrivers: 0
+ DCRuleSet: None
+ QualifierMustStartRace: 0
+ NumCarClasses: 1
+ NumCarTypes: 1
+ HeatRacing: 0
+ BuildType: Release
+ BuildTarget: Members
+ BuildVersion: 2024.06.10.01
+ WeekendOptions:
+  NumStarters: 0
+  StartingGrid: single file
+  QualifyScoring: best lap
+  CourseCautions: off
+  StandingStart: 0
+  ShortParadeLap: 0
+  Restarts: single file
+  WeatherType: Static
+  Skies: Clear
+  WindDirection: SE
+  WindSpeed: 14.48 km/h
+  WeatherTemp: 23.89 C
+  RelativeHumidity: 55 %
+  FogLevel: 0 %
+  TimeOfDay: 12:00 pm
+  Date: 2024-04-01
+  EarthRotationSpeedupFactor: 1
+  Unofficial: 1
+  CommercialMode: consumer
+  NightMode: variable
+  IsFixedSetup: 0
+  StrictLapsChecking: default
+  HasOpenRegistration: 0
+  HardcoreLevel: 1
+  NumJokerLaps: 0
+  IncidentLimit: unlimited
+  FastRepairsLimit: 3
+  GreenWhiteCheckeredLimit: unlimited
+ TelemetryOptions:
+  TelemetryDiskFile: ""
+
+SessionInfo:
+ Sessions:
+ - SessionNum: 0
+   SessionLaps: unlimited
+   SessionTime: unlimited
+   SessionNumLapsToAvg: 0
+   SessionType: Offline Testing
+   SessionTrackRubberState: moderate usage
+   SessionName: TESTING
+   SessionSubType:
+   SessionSkipped: 0
+   SessionRunGroupsUsed: 0
+   SessionEnforceTireCompoundChange: 0
+   ResultsPositions:
+   - Position: 1
+     ClassPosition: 0
+     CarIdx: 0
+     Lap: 4
+     Time: 68.6711
+     FastestLap: 4
+     FastestTime: 68.6711
+     LastTime: -1.0000
+     LapsLed: 0
+     LapsComplete: 8
+     JokerLapsComplete: 0
+     LapsDriven: 8.125
+     Incidents: 0
+     ReasonOutId: 0
+     ReasonOutStr: Running
+   ResultsFastestLap:
+   - CarIdx: 0
+     FastestLap: 4
+     FastestTime: 68.6711
+   ResultsAverageLapTime: -1.0000
+   ResultsNumCautionFlags: 0
+   ResultsNumCautionLaps: 0
+   ResultsNumLeadChanges: 0
+   ResultsLapsComplete: -1
+   ResultsOfficial: 0
+ - SessionNum: 1
+   SessionLaps: 50
+   SessionTime: 3600.0000 sec
+   SessionType: Race
+   SessionName: RACE
+   QualifyPositions:
+   - Position: 1
+     ClassPosition: 0
+     CarIdx: 0
+     FastestLap: 2
+     FastestTime: 68.5000
+
+QualifyResultsInfo:
+ Results:
+ - Position: 1
+   ClassPosition: 0
+   CarIdx: 0
+   FastestLap: 2
+   FastestTime: 68.5000
+
+CameraInfo:
+ Groups:
+ - GroupNum: 1
+   GroupName: Nose
+   Cameras:
+   - CameraNum: 1
+     CameraName: CamNose
+ - GroupNum: 10
+   GroupName: Scenic
+   IsScenic: true
+   Cameras:
+   - CameraNum: 1
+     CameraName: Scenic_01
+
+RadioInfo:
+ SelectedRadioNum: 0
+ Radios:
+ - RadioNum: 0
+   HopCount: 2
+   NumFrequencies: 1
+   TunedToFrequencyNum: 0
+   ScanningIsOn: 1
+   Frequencies:
+   - FrequencyNum: 0
+     FrequencyName: "@ALLTEAMS"
+     Priority: 12
+     CarIdx: -1
+     EntryIdx: -1
+     ClubID: 0
+     CanScan: 1
+     CanSquawk: 1
+     Muted: 0
+     IsMutable: 1
+     IsDeletable: 0
+
+DriverInfo:
+ DriverCarIdx: 0
+ DriverUserID: 12345
+ PaceCarIdx: -1
+ DriverHeadPosX: 0.386
+ DriverHeadPosY: 0.000
+ DriverHeadPosZ: 0.341
+ DriverCarIsElectric: 0
+ DriverCarIdleRPM: 4000.000
+ DriverCarRedLine: 13000.000
+ DriverCarEngCylinderCount: 6
+ DriverCarFuelKgPerLtr: 0.750
+ DriverCarFuelMaxLtr: 146.667
+ DriverCarMaxFuelPct: 1.000
+ DriverCarGearNumForward: 8
+ DriverCarGearNeutral: 1
+ DriverCarGearReverse: 1
+ DriverCarSLFirstRPM: 10560.000
+ DriverCarSLShiftRPM: 11057.000
+ DriverCarSLLastRPM: 11473.000
+ DriverCarSLBlinkRPM: 11629.000
+ DriverCarVersion: 2026.01.01.01
+ DriverPitTrkPct: 0.055219
+ DriverCarEstLapTime: 69.3118
+ DriverSetupName: test.sto
+ DriverSetupIsModified: 0
+ DriverSetupLoadTypeName: user
+ DriverSetupPassedTech: 1
+ DriverIncidentCount: 0
+ DriverTires:
+ - TireIndex: 0
+   TireCompoundType: Dry
+ - TireIndex: 1
+   TireCompoundType: Wet
+ Drivers:
+ - CarIdx: 0
+   UserName: Test Driver
+   AbbrevName:
+   Initials:
+   UserID: 12345
+   TeamID: 0
+   TeamName: Test Team
+   CarNumber: "01"
+   CarNumberRaw: 1
+   CarPath: testcar
+   CarClassID: 10
+   CarID: 20
+   CarIsPaceCar: 0
+   CarIsAI: 0
+   CarIsElectric: 0
+   CarScreenName: Test Car
+   CarScreenNameShort: Test
+   CarClassShortName: Prototype
+   CarClassRelSpeed: 100
+   CarClassLicenseLevel: 1
+   CarClassMaxFuelPct: 1.000 %
+   CarClassWeightPenalty: 0.000 kg
+   CarClassPowerAdjust: 0.000 %
+   CarClassDryTireSetLimit: 0 %
+   CarClassColor: 0xffffff
+   CarClassEstLapTime: 69.3118
+   IRating: 2500
+   LicLevel: 20
+   LicSubLevel: 350
+   LicString: A 3.50
+   LicColor: 0xundefined
+   IsSpectator: 0
+   CarDesignStr: 1,ffffff,000000,ff0000
+   HelmetDesignStr: 1,ffffff,000000,ff0000
+   SuitDesignStr: 1,ffffff,000000,ff0000
+   BodyType: 0
+   FaceType: 0
+   HelmetType: 0
+   CarNumberDesignStr: 0,0,ffffff,000000,ff0000
+   CarSponsor_1: 0
+   CarSponsor_2: 0
+   CurDriverIncidentCount: 0
+   TeamIncidentCount: 0
+
+SplitTimeInfo:
+ Sectors:
+ - SectorNum: 0
+   SectorStartPct: 0.000000
+ - SectorNum: 1
+   SectorStartPct: 0.271918
+
+CarSetup:
+ UpdateCount: 11
+ VehicleSpecificSection:
+  ArbitrarySetting: 750 N/mm
+
+SessionLogInfo:
+ SessionStartTime: 0.0
+...

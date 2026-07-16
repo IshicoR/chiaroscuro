@@ -1,5 +1,6 @@
 [package]
-name = "chiaroscuro-chiaro"
+name = "chiaro"
+description = "Desktop executable for Chiaroscuro."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -15,14 +16,17 @@ name = "chiaro"
 path = "src/chiaro.rs"
 
 [dependencies]
-config = { workspace = true }
+chiaro-actions = { workspace = true }
+chiaro-config = { workspace = true }
+chiaro-dashboard-ui = { workspace = true }
+chiaro-ibt-picker = { workspace = true }
+chiaro-live-telemetry = { workspace = true }
+chiaro-navigation-ui = { workspace = true }
+chiaro-settings-ui = { workspace = true }
+chiaro-theme = { workspace = true }
+chiaro-tray = { workspace = true }
+chiaro-window = { workspace = true }
+chiaroscuro-telemetry = { workspace = true }
 iced = { workspace = true }
-iced_aw = { workspace = true }
 iced_fonts = { workspace = true }
-iced_plot = { workspace = true }
 rpmalloc = { workspace = true }
-serde = { workspace = true }
-smol = { workspace = true }
-
-[target.'cfg(windows)'.dependencies]
-tray-icon = { workspace = true }

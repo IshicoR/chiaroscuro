@@ -1,0 +1,25 @@
+[package]
+name = "chiaro-dashboard-ui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Dashboard state, update logic, and Iced view for Chiaro."
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/dashboard-ui.rs"
+
+[dependencies]
+chiaro-actions = { workspace = true }
+chiaro-theme = { workspace = true }
+chiaro-time-series-chart = { workspace = true }
+chiaroscuro-irsdk = { workspace = true }
+chiaroscuro-telemetry = { workspace = true }
+iced = { workspace = true }
+iced_fonts = { workspace = true }
+iced_plot = { workspace = true }

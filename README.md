@@ -16,9 +16,9 @@ Assetto Corsa Competizione, Assetto Corsa EVO, GT7, or other simulators is out
 of scope. New protocol, telemetry, UI, and data-model work should be designed
 around the iRacing SDK instead of introducing multi-simulator abstractions.
 
-The existing `chiaro-ac-udp` crate and Assetto Corsa-oriented telemetry code are
-legacy prototype components. They do not represent the target product and will
-be replaced or removed as the iRacing integration is implemented.
+The desktop links the `chiaroscuro-irsdk` crate directly and reads iRacing's
+shared-memory telemetry in a background subscription. No relay process or UDP
+transport is required.
 
 ## Features
 
@@ -34,10 +34,8 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 
 ## Implementation Status
 
-The desktop shell and telemetry dashboard are under active development. The
-iRacing SDK data source has not replaced all legacy prototype paths yet; code
-that depends on Assetto Corsa shared memory or `chiaro-ac-udp` should be treated
-as migration work, not as a supported simulator integration.
+The desktop shell and telemetry dashboard are under active development. Live
+iRacing SDK telemetry is available through the in-process shared-memory client.
 
 ## License
 
