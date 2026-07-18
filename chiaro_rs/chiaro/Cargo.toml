@@ -1,0 +1,32 @@
+[package]
+name = "chiaro"
+description = "Desktop executable for Chiaroscuro."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "chiaro"
+path = "src/chiaro.rs"
+
+[dependencies]
+chiaro_actions = { workspace = true }
+chiaro_config = { workspace = true }
+chiaro_dashboard_ui = { workspace = true }
+chiaro_ibt_picker = { workspace = true }
+chiaro_live_telemetry = { workspace = true }
+chiaro_navigation_ui = { workspace = true }
+chiaro_settings_ui = { workspace = true }
+chiaro_theme = { workspace = true }
+chiaro_tray = { workspace = true }
+chiaro_window = { workspace = true }
+chiaro_telemetry = { workspace = true }
+iced = { workspace = true }
+iced_fonts = { workspace = true }
+rpmalloc = { workspace = true }

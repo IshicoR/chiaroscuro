@@ -1,24 +1,24 @@
 [workspace]
 resolver = "3"
 members = [
-    "chiaro-rs/actions",
-    "chiaro-rs/chiaro",
-    "chiaro-rs/config",
-    "chiaro-rs/dashboard-ui",
-    "chiaro-rs/ibt-picker",
-    "chiaro-rs/irsdk",
-    "chiaro-rs/live-telemetry",
-    "chiaro-rs/navigation-ui",
-    "chiaro-rs/settings-ui",
-    "chiaro-rs/telemetry",
-    "chiaro-rs/theme",
-    "chiaro-rs/time-series-chart",
-    "chiaro-rs/tray",
-    "chiaro-rs/window",
+    "chiaro_rs/actions",
+    "chiaro_rs/chiaro",
+    "chiaro_rs/config",
+    "chiaro_rs/dashboard_ui",
+    "chiaro_rs/ibt_picker",
+    "chiaro_rs/irsdk",
+    "chiaro_rs/live_telemetry",
+    "chiaro_rs/navigation_ui",
+    "chiaro_rs/settings_ui",
+    "chiaro_rs/telemetry",
+    "chiaro_rs/theme",
+    "chiaro_rs/time_series_chart",
+    "chiaro_rs/tray",
+    "chiaro_rs/window",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Ryuji Ishimi"]
 edition = "2024"
 rust-version = "1.96"
@@ -27,20 +27,20 @@ license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 bitflags = "2.13.0"
-chiaro = { version = "0.1.0", path = "chiaro-rs/chiaro" }
-chiaro-actions = { version = "0.1.0", path = "chiaro-rs/actions" }
-chiaro-config = { version = "0.1.0", path = "chiaro-rs/config" }
-chiaro-dashboard-ui = { version = "0.1.0", path = "chiaro-rs/dashboard-ui" }
-chiaro-ibt-picker = { version = "0.1.0", path = "chiaro-rs/ibt-picker" }
-chiaro-live-telemetry = { version = "0.1.0", path = "chiaro-rs/live-telemetry" }
-chiaro-navigation-ui = { version = "0.1.0", path = "chiaro-rs/navigation-ui" }
-chiaro-settings-ui = { version = "0.1.0", path = "chiaro-rs/settings-ui" }
-chiaro-theme = { version = "0.1.0", path = "chiaro-rs/theme" }
-chiaro-time-series-chart = { version = "0.1.0", path = "chiaro-rs/time-series-chart" }
-chiaro-tray = { version = "0.1.0", path = "chiaro-rs/tray" }
-chiaro-window = { version = "0.1.0", path = "chiaro-rs/window" }
-chiaroscuro-irsdk = { version = "0.1.0", path = "chiaro-rs/irsdk" }
-chiaroscuro-telemetry = { version = "0.1.0", path = "chiaro-rs/telemetry" }
+chiaro = { version = "0.1.0", path = "chiaro_rs/chiaro" }
+chiaro_actions = { version = "0.1.0", path = "chiaro_rs/actions" }
+chiaro_config = { version = "0.1.0", path = "chiaro_rs/config" }
+chiaro_dashboard_ui = { version = "0.1.0", path = "chiaro_rs/dashboard_ui" }
+chiaro_ibt_picker = { version = "0.1.0", path = "chiaro_rs/ibt_picker" }
+chiaro_live_telemetry = { version = "0.1.0", path = "chiaro_rs/live_telemetry" }
+chiaro_navigation_ui = { version = "0.1.0", path = "chiaro_rs/navigation_ui" }
+chiaro_settings_ui = { version = "0.1.0", path = "chiaro_rs/settings_ui" }
+chiaro_theme = { version = "0.1.0", path = "chiaro_rs/theme" }
+chiaro_time_series_chart = { version = "0.1.0", path = "chiaro_rs/time_series_chart" }
+chiaro_tray = { version = "0.1.0", path = "chiaro_rs/tray" }
+chiaro_window = { version = "0.1.0", path = "chiaro_rs/window" }
+chiaro_irsdk = { version = "0.1.0", path = "chiaro_rs/irsdk" }
+chiaro_telemetry = { version = "0.1.0", path = "chiaro_rs/telemetry" }
 config = "0.15.25"
 encoding_rs = "0.8.35"
 iced = { version = "0.14.0", features = ["smol"] }

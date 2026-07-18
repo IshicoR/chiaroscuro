@@ -1,0 +1,15 @@
+[package]
+name = "chiaro_actions"
+description = "Shared commands and navigation destinations for the Chiaro desktop application."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/actions.rs"

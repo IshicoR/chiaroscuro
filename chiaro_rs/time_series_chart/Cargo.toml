@@ -1,0 +1,19 @@
+[package]
+name = "chiaro_time_series_chart"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Reusable Iced time-series chart for the Chiaro desktop application."
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/time-series-chart.rs"
+
+[dependencies]
+iced = { workspace = true }
+iced_plot = { workspace = true }

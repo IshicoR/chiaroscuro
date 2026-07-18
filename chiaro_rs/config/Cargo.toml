@@ -1,0 +1,19 @@
+[package]
+name = "chiaro_config"
+description = "Persistent configuration for the Chiaro desktop application."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/config.rs"
+
+[dependencies]
+config = { workspace = true }
+serde = { workspace = true }

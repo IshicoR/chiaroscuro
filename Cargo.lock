@@ -518,127 +518,62 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chiaro"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
- "chiaro-actions",
- "chiaro-config",
- "chiaro-dashboard-ui",
- "chiaro-ibt-picker",
- "chiaro-live-telemetry",
- "chiaro-navigation-ui",
- "chiaro-settings-ui",
- "chiaro-theme",
- "chiaro-tray",
- "chiaro-window",
- "chiaroscuro-telemetry",
+ "chiaro_actions",
+ "chiaro_config",
+ "chiaro_dashboard_ui",
+ "chiaro_ibt_picker",
+ "chiaro_live_telemetry",
+ "chiaro_navigation_ui",
+ "chiaro_settings_ui",
+ "chiaro_telemetry",
+ "chiaro_theme",
+ "chiaro_tray",
+ "chiaro_window",
  "iced",
  "iced_fonts",
  "rpmalloc",
 ]
 
 [[package]]
-name = "chiaro-actions"
-version = "0.1.0"
+name = "chiaro_actions"
+version = "0.1.1"
 
 [[package]]
-name = "chiaro-config"
-version = "0.1.0"
+name = "chiaro_config"
+version = "0.1.1"
 dependencies = [
  "config",
  "serde",
 ]
 
 [[package]]
-name = "chiaro-dashboard-ui"
-version = "0.1.0"
+name = "chiaro_dashboard_ui"
+version = "0.1.1"
 dependencies = [
- "chiaro-actions",
- "chiaro-theme",
- "chiaro-time-series-chart",
- "chiaroscuro-irsdk",
- "chiaroscuro-telemetry",
+ "chiaro_actions",
+ "chiaro_irsdk",
+ "chiaro_telemetry",
+ "chiaro_theme",
+ "chiaro_time_series_chart",
  "iced",
  "iced_fonts",
  "iced_plot",
 ]
 
 [[package]]
-name = "chiaro-ibt-picker"
-version = "0.1.0"
+name = "chiaro_ibt_picker"
+version = "0.1.1"
 dependencies = [
- "chiaroscuro-telemetry",
+ "chiaro_telemetry",
  "rfd",
  "smol",
 ]
 
 [[package]]
-name = "chiaro-live-telemetry"
-version = "0.1.0"
-dependencies = [
- "chiaroscuro-irsdk",
- "iced",
- "smol",
-]
-
-[[package]]
-name = "chiaro-navigation-ui"
-version = "0.1.0"
-dependencies = [
- "chiaro-actions",
- "iced",
- "iced_fonts",
-]
-
-[[package]]
-name = "chiaro-settings-ui"
-version = "0.1.0"
-dependencies = [
- "chiaro-actions",
- "chiaro-theme",
- "chiaroscuro-irsdk",
- "chiaroscuro-telemetry",
- "iced",
-]
-
-[[package]]
-name = "chiaro-theme"
-version = "0.1.0"
-dependencies = [
- "iced",
-]
-
-[[package]]
-name = "chiaro-time-series-chart"
-version = "0.1.0"
-dependencies = [
- "iced",
- "iced_plot",
-]
-
-[[package]]
-name = "chiaro-tray"
-version = "0.1.0"
-dependencies = [
- "chiaro-actions",
- "iced",
- "image",
- "tray-icon",
-]
-
-[[package]]
-name = "chiaro-window"
-version = "0.1.0"
-dependencies = [
- "chiaro-theme",
- "iced",
- "iced_fonts",
- "image",
- "winapi",
-]
-
-[[package]]
-name = "chiaroscuro-irsdk"
-version = "0.1.0"
+name = "chiaro_irsdk"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.13.0",
  "encoding_rs",
@@ -648,10 +583,75 @@ dependencies = [
 ]
 
 [[package]]
-name = "chiaroscuro-telemetry"
-version = "0.1.0"
+name = "chiaro_live_telemetry"
+version = "0.1.1"
 dependencies = [
- "chiaroscuro-irsdk",
+ "chiaro_irsdk",
+ "iced",
+ "smol",
+]
+
+[[package]]
+name = "chiaro_navigation_ui"
+version = "0.1.1"
+dependencies = [
+ "chiaro_actions",
+ "iced",
+ "iced_fonts",
+]
+
+[[package]]
+name = "chiaro_settings_ui"
+version = "0.1.1"
+dependencies = [
+ "chiaro_actions",
+ "chiaro_irsdk",
+ "chiaro_telemetry",
+ "chiaro_theme",
+ "iced",
+]
+
+[[package]]
+name = "chiaro_telemetry"
+version = "0.1.1"
+dependencies = [
+ "chiaro_irsdk",
+]
+
+[[package]]
+name = "chiaro_theme"
+version = "0.1.1"
+dependencies = [
+ "iced",
+]
+
+[[package]]
+name = "chiaro_time_series_chart"
+version = "0.1.1"
+dependencies = [
+ "iced",
+ "iced_plot",
+]
+
+[[package]]
+name = "chiaro_tray"
+version = "0.1.1"
+dependencies = [
+ "chiaro_actions",
+ "iced",
+ "image",
+ "tray-icon",
+]
+
+[[package]]
+name = "chiaro_window"
+version = "0.1.1"
+dependencies = [
+ "chiaro_theme",
+ "iced",
+ "iced_fonts",
+ "image",
+ "winapi",
 ]
 
 [[package]]

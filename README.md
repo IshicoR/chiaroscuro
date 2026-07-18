@@ -22,7 +22,7 @@ Assetto Corsa Competizione, Assetto Corsa EVO, GT7, or other simulators is out
 of scope. New protocol, telemetry, UI, and data-model work should be designed
 around the iRacing SDK instead of introducing multi-simulator abstractions.
 
-The desktop links the `chiaroscuro-irsdk` crate directly and reads iRacing's
+The desktop links the `chiaro-irsdk` crate directly and reads iRacing's
 shared-memory telemetry in a background subscription. No relay process or UDP
 transport is required.
 
