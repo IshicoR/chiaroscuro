@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     ffi::OsStr,
     fs, io,
@@ -6,14 +7,52 @@ use std::{
 };
 
 use config::{Config, ConfigError, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const APPLICATION_DIRECTORY: &str = "chiaroscuro";
 const SETTINGS_FILE: &str = "settings.toml";
+pub const DASHBOARD_LAYOUT_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DesktopConfig {
     pub show_diagnostics: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dashboard: Option<DashboardLayoutConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DashboardLayoutConfig {
+    pub schema_version: u32,
+    pub chart_order: Vec<String>,
+    pub chart_visibility: BTreeMap<String, bool>,
+    pub chart_collapsed: BTreeMap<String, bool>,
+    pub chart_columns: u8,
+    pub setup_card_order: Vec<String>,
+    pub setup_card_collapsed: BTreeMap<String, bool>,
+    pub lap_analysis_order: Vec<String>,
+    pub lap_analysis_collapsed: BTreeMap<String, bool>,
+    pub car_setup_card_order: Vec<String>,
+    pub car_setup_card_collapsed: BTreeMap<String, bool>,
+}
+
+impl Default for DashboardLayoutConfig {
+    fn default() -> Self {
+        Self {
+            schema_version: DASHBOARD_LAYOUT_SCHEMA_VERSION,
+            chart_order: Vec::new(),
+            chart_visibility: BTreeMap::new(),
+            chart_collapsed: BTreeMap::new(),
+            chart_columns: 1,
+            setup_card_order: Vec::new(),
+            setup_card_collapsed: BTreeMap::new(),
+            lap_analysis_order: Vec::new(),
+            lap_analysis_collapsed: BTreeMap::new(),
+            car_setup_card_order: Vec::new(),
+            car_setup_card_collapsed: BTreeMap::new(),
+        }
+    }
 }
 
 impl DesktopConfig {
@@ -44,11 +83,12 @@ impl DesktopConfig {
         };
 
         fs::create_dir_all(parent)?;
-        fs::write(path, self.encode())
+        fs::write(path, self.encode()?)
     }
 
-    fn encode(&self) -> String {
-        format!("show_diagnostics = {}\n", self.show_diagnostics)
+    fn encode(&self) -> io::Result<String> {
+        toml::to_string_pretty(self)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 }
 
@@ -79,9 +119,11 @@ fn settings_path_from(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsStr, path::PathBuf};
+    use std::{collections::BTreeMap, ffi::OsStr, path::PathBuf};
 
-    use super::{DesktopConfig, settings_path_from};
+    use super::{
+        DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig, settings_path_from,
+    };
 
     #[test]
     fn settings_path_prefers_xdg_config_home() {
@@ -101,8 +143,72 @@ mod tests {
     fn encodes_desktop_settings_as_toml() {
         let config = DesktopConfig {
             show_diagnostics: true,
+            dashboard: None,
         };
 
-        assert_eq!(config.encode(), "show_diagnostics = true\n");
+        assert_eq!(config.encode().unwrap(), "show_diagnostics = true\n");
+    }
+
+    #[test]
+    fn loads_legacy_desktop_settings_without_dashboard_layout() {
+        let config: DesktopConfig = toml::from_str("show_diagnostics = true\n").unwrap();
+
+        assert!(config.show_diagnostics);
+        assert_eq!(config.dashboard, None);
+    }
+
+    #[test]
+    fn dashboard_layout_round_trips_through_toml() {
+        let dashboard = DashboardLayoutConfig {
+            schema_version: DASHBOARD_LAYOUT_SCHEMA_VERSION,
+            chart_order: vec!["speed".into(), "pedal".into(), "steering".into()],
+            chart_visibility: BTreeMap::from([
+                ("pedal".into(), true),
+                ("speed".into(), true),
+                ("steering".into(), false),
+            ]),
+            chart_collapsed: BTreeMap::from([("pedal".into(), true)]),
+            chart_columns: 2,
+            setup_card_order: vec!["session".into(), "charts".into(), "laps".into()],
+            setup_card_collapsed: BTreeMap::from([("session".into(), false)]),
+            lap_analysis_order: vec!["cursor".into(), "vehicle".into(), "inputs".into()],
+            lap_analysis_collapsed: BTreeMap::from([("cursor".into(), true)]),
+            car_setup_card_order: vec![
+                "summary".into(),
+                "vehicle:specifications".into(),
+                "setup:tires".into(),
+            ],
+            car_setup_card_collapsed: BTreeMap::from([("setup:tires".into(), true)]),
+        };
+        let config = DesktopConfig {
+            show_diagnostics: false,
+            dashboard: Some(dashboard),
+        };
+
+        let encoded = config.encode().unwrap();
+        let decoded: DesktopConfig = toml::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded, config);
+    }
+
+    #[test]
+    fn omits_dashboard_table_when_layout_is_not_saved() {
+        let encoded = DesktopConfig::default().encode().unwrap();
+
+        assert!(!encoded.contains("dashboard"));
+        assert_eq!(encoded, "show_diagnostics = false\n");
+    }
+
+    #[test]
+    fn missing_dashboard_fields_use_layout_defaults() {
+        let config: DesktopConfig = toml::from_str("[dashboard]\n").unwrap();
+        let dashboard = config.dashboard.unwrap();
+
+        assert_eq!(dashboard.schema_version, DASHBOARD_LAYOUT_SCHEMA_VERSION);
+        assert_eq!(dashboard.chart_columns, 1);
+        assert!(dashboard.chart_order.is_empty());
+        assert!(dashboard.chart_visibility.is_empty());
+        assert!(dashboard.car_setup_card_order.is_empty());
+        assert!(dashboard.car_setup_card_collapsed.is_empty());
     }
 }

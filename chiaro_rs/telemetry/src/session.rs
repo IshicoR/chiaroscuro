@@ -9,10 +9,16 @@ use chiaro_irsdk::{SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapsh
 use crate::ibt::{IbtInfo, LoadedIbt};
 
 pub const HISTORY_WINDOW: Duration = Duration::from_secs(12);
-const LIVE_HISTORY_RETENTION: Duration = Duration::from_secs(5 * 60);
-const LIVE_HISTORY_SAMPLE_LIMIT: usize = 5 * 60 * 60;
-const LIVE_CHART_SAMPLE_LIMIT: usize = 2_048;
+/// Internal X-axis units for one lap. Basis-point scaling keeps long, flat line
+/// segments representable in the chart renderer's cumulative `f32` geometry.
+pub const LAP_DISTANCE_AXIS_MAX: f64 = 10_000.0;
+// The live chart renders the latest 12 seconds. Keep one extra second so the
+// line still crosses the left viewport edge smoothly, but discard data that is
+// no longer useful instead of repeatedly tessellating a much larger window.
+const LIVE_HISTORY_RETENTION: Duration = Duration::from_secs(13);
+const LIVE_HISTORY_SAMPLE_LIMIT: usize = 13 * 60;
 const TRANSIENT_NEUTRAL_MAX_SECONDS: f64 = 0.35;
+const LAP_DISTANCE_BUCKET_COUNT: usize = 10_000;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ConnectionStatus {
@@ -20,6 +26,55 @@ pub enum ConnectionStatus {
     Disconnected,
     Connecting,
     Connected,
+}
+
+/// Stable presentation and capability metadata for a live telemetry source.
+///
+/// Transport crates provide this descriptor while the session and UI remain
+/// independent from the concrete transport (shared memory, cloud, and so on).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveTelemetrySourceInfo {
+    id: &'static str,
+    display_name: &'static str,
+    unavailable_reason: Option<&'static str>,
+}
+
+impl LiveTelemetrySourceInfo {
+    pub const fn available(id: &'static str, display_name: &'static str) -> Self {
+        Self {
+            id,
+            display_name,
+            unavailable_reason: None,
+        }
+    }
+
+    pub const fn unavailable(
+        id: &'static str,
+        display_name: &'static str,
+        reason: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            display_name,
+            unavailable_reason: Some(reason),
+        }
+    }
+
+    pub const fn id(self) -> &'static str {
+        self.id
+    }
+
+    pub const fn display_name(self) -> &'static str {
+        self.display_name
+    }
+
+    pub const fn is_available(self) -> bool {
+        self.unavailable_reason.is_none()
+    }
+
+    pub const fn unavailable_reason(self) -> Option<&'static str> {
+        self.unavailable_reason
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +128,7 @@ pub struct Session {
     latest: Option<TelemetrySample>,
     latest_frame: Option<TelemetryFrame>,
     session_info: Option<SessionInfo>,
+    session_info_revision: u64,
     history: VecDeque<HistoryEntry>,
     laps: Vec<TelemetryLap>,
     live_started_at: Option<Instant>,
@@ -111,6 +167,58 @@ impl Session {
             .front()
             .zip(self.history.back())
             .map(|(first, last)| (first.elapsed_seconds, last.elapsed_seconds))
+    }
+
+    /// Returns the beginning of the retained live chart data.
+    ///
+    /// The visible window can be narrower than this retained range. Keeping
+    /// this boundary aligned with the history front preserves point indices
+    /// when old live samples are trimmed. Recorded sessions return `None`.
+    pub fn live_chart_minimum_x(&self) -> Option<f64> {
+        if !matches!(self.source, SessionSource::Live) {
+            return None;
+        }
+
+        self.history.front().map(|first| first.elapsed_seconds)
+    }
+
+    /// Finds the finite value range across the retained live history without
+    /// allocating an intermediate point collection.
+    pub fn live_value_range(&self, value: impl Fn(&TelemetrySample) -> f32) -> Option<(f64, f64)> {
+        if !matches!(self.source, SessionSource::Live) {
+            return None;
+        }
+
+        self.history
+            .iter()
+            .map(|entry| f64::from(value(&entry.sample)))
+            .filter(|value| value.is_finite())
+            .fold(None, |range, value| {
+                Some(range.map_or((value, value), |(min, max): (f64, f64)| {
+                    (min.min(value), max.max(value))
+                }))
+            })
+    }
+
+    /// Finds the finite range of an optional value across retained live history.
+    pub fn live_value_range_optional(
+        &self,
+        value: impl Fn(&TelemetrySample) -> Option<f32>,
+    ) -> Option<(f64, f64)> {
+        if !matches!(self.source, SessionSource::Live) {
+            return None;
+        }
+
+        self.history
+            .iter()
+            .filter_map(|entry| value(&entry.sample))
+            .map(f64::from)
+            .filter(|value| value.is_finite())
+            .fold(None, |range, value| {
+                Some(range.map_or((value, value), |(min, max): (f64, f64)| {
+                    (min.min(value), max.max(value))
+                }))
+            })
     }
 
     pub fn laps(&self) -> &[TelemetryLap] {
@@ -169,6 +277,14 @@ impl Session {
         self.session_info.as_ref()
     }
 
+    /// Monotonically identifies the SessionInfo value held by this session.
+    ///
+    /// The SDK update counter can restart when iRacing reconnects, so UI
+    /// caches must use this revision instead of comparing the SDK counter.
+    pub fn session_info_revision(&self) -> u64 {
+        self.session_info_revision
+    }
+
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
     }
@@ -188,7 +304,7 @@ impl Session {
         self.packets_received = 0;
         self.latest = None;
         self.latest_frame = None;
-        self.session_info = None;
+        self.replace_session_info(None);
         self.history.clear();
         self.laps.clear();
         self.live_started_at = None;
@@ -212,7 +328,7 @@ impl Session {
         self.packets_received = u64::try_from(info.record_count).unwrap_or(u64::MAX);
         self.latest = latest;
         self.latest_frame = Some(latest_frame);
-        self.session_info = Some(session_info);
+        self.replace_session_info(Some(session_info));
         self.history = samples
             .into_iter()
             .map(|entry| HistoryEntry {
@@ -252,13 +368,20 @@ impl Session {
     }
 
     pub fn record_sample(&mut self, sample: TelemetrySample) {
+        self.record_sample_at(Instant::now(), sample);
+    }
+
+    /// Records one live sample using the time it was captured by the telemetry
+    /// producer instead of the time the UI happened to process it.
+    pub fn record_sample_at(&mut self, captured_at: Instant, sample: TelemetrySample) {
         if self.ibt_info().is_some() || !sample.is_finite() {
             return;
         }
 
-        let now = Instant::now();
-        let started_at = *self.live_started_at.get_or_insert(now);
-        let elapsed_seconds = now.saturating_duration_since(started_at).as_secs_f64();
+        let started_at = *self.live_started_at.get_or_insert(captured_at);
+        let elapsed_seconds = captured_at
+            .saturating_duration_since(started_at)
+            .as_secs_f64();
         self.latest = Some(sample);
         self.packets_received = self.packets_received.saturating_add(1);
         self.history.push_back(HistoryEntry {
@@ -267,6 +390,30 @@ impl Session {
         });
 
         self.trim_live_history(elapsed_seconds);
+    }
+
+    /// Applies a producer-side batch while preserving the capture time of every
+    /// sample. The full SDK frame and session information are optional because
+    /// they are refreshed less frequently than the chart samples.
+    pub fn record_live_batch(
+        &mut self,
+        samples: impl IntoIterator<Item = (Instant, TelemetrySample)>,
+        latest_frame: Option<TelemetryFrame>,
+        session_info: Option<SessionInfo>,
+    ) {
+        if self.ibt_info().is_some() {
+            return;
+        }
+
+        if let Some(frame) = latest_frame {
+            self.latest_frame = Some(frame);
+        }
+        if let Some(session_info) = session_info {
+            self.replace_session_info(Some(session_info));
+        }
+        for (captured_at, sample) in samples {
+            self.record_sample_at(captured_at, sample);
+        }
     }
 
     fn trim_live_history(&mut self, elapsed_seconds: f64) {
@@ -290,9 +437,14 @@ impl Session {
 
         self.latest_frame = Some(snapshot.frame);
         if let Some(session_info) = session_info {
-            self.session_info = Some(session_info);
+            self.replace_session_info(Some(session_info));
         }
         self.record_sample(snapshot.sample);
+    }
+
+    fn replace_session_info(&mut self, session_info: Option<SessionInfo>) {
+        self.session_info = session_info;
+        self.session_info_revision = self.session_info_revision.wrapping_add(1);
     }
 
     pub fn points_in(
@@ -303,38 +455,157 @@ impl Session {
         let Some(range) = self.history_range(lap_index) else {
             return Vec::new();
         };
+        if lap_index.is_some() {
+            return positioned_entries(&self.history, range)
+                .map(|(position, entry)| [position, f64::from(value(&entry.sample))])
+                .collect();
+        }
         let Some(first) = self.history.get(range.start) else {
             return Vec::new();
         };
         let origin = self.elapsed_origin(lap_index, first);
-        let stride = self.chart_sample_stride(lap_index, range.len());
 
-        let mut points = self
+        self.history
+            .iter()
+            .skip(range.start)
+            .take(range.len())
+            .map(|entry| {
+                [
+                    entry.elapsed_seconds - origin,
+                    f64::from(value(&entry.sample)),
+                ]
+            })
+            .collect()
+    }
+
+    /// Returns points for a channel that may not be published by the current car.
+    pub fn points_in_optional(
+        &self,
+        lap_index: Option<usize>,
+        value: impl Fn(&TelemetrySample) -> Option<f32>,
+    ) -> Vec<[f64; 2]> {
+        let Some(range) = self.history_range(lap_index) else {
+            return Vec::new();
+        };
+        let Some(first) = self.history.get(range.start) else {
+            return Vec::new();
+        };
+        let origin = self.elapsed_origin(lap_index, first);
+
+        if lap_index.is_some() {
+            return positioned_entries(&self.history, range)
+                .filter_map(|(position, entry)| {
+                    value(&entry.sample)
+                        .filter(|value| value.is_finite())
+                        .map(|value| [position, f64::from(value)])
+                })
+                .collect();
+        }
+
+        self.history
+            .iter()
+            .skip(range.start)
+            .take(range.len())
+            .filter_map(|entry| {
+                value(&entry.sample)
+                    .filter(|value| value.is_finite())
+                    .map(|value| [entry.elapsed_seconds - origin, f64::from(value)])
+            })
+            .collect()
+    }
+
+    /// Returns live points received after `packets_received`, treating it as a
+    /// count of samples already consumed by the caller.
+    ///
+    /// A cursor older than the retained history is clamped to its first sample;
+    /// a cursor at or beyond the current count produces no points. Recorded
+    /// sessions return an empty collection because their X axis is lap based.
+    pub fn live_points_since(
+        &self,
+        packets_received: u64,
+        value: impl Fn(&TelemetrySample) -> f32,
+    ) -> Vec<[f64; 2]> {
+        if !matches!(self.source, SessionSource::Live) || self.history.is_empty() {
+            return Vec::new();
+        }
+
+        let retained_count = u64::try_from(self.history.len()).unwrap_or(u64::MAX);
+        let first_retained_packet = self.packets_received.saturating_sub(retained_count);
+        let start_packet = packets_received.clamp(first_retained_packet, self.packets_received);
+        let skip = usize::try_from(start_packet - first_retained_packet)
+            .unwrap_or(self.history.len())
+            .min(self.history.len());
+
+        self.history
+            .iter()
+            .skip(skip)
+            .map(|entry| [entry.elapsed_seconds, f64::from(value(&entry.sample))])
+            .collect()
+    }
+
+    /// Returns newly received live points while omitting unavailable values.
+    pub fn live_points_since_optional(
+        &self,
+        packets_received: u64,
+        value: impl Fn(&TelemetrySample) -> Option<f32>,
+    ) -> Vec<[f64; 2]> {
+        if !matches!(self.source, SessionSource::Live) || self.history.is_empty() {
+            return Vec::new();
+        }
+
+        let retained_count = u64::try_from(self.history.len()).unwrap_or(u64::MAX);
+        let first_retained_packet = self.packets_received.saturating_sub(retained_count);
+        let start_packet = packets_received.clamp(first_retained_packet, self.packets_received);
+        let skip = usize::try_from(start_packet - first_retained_packet)
+            .unwrap_or(self.history.len())
+            .min(self.history.len());
+
+        self.history
+            .iter()
+            .skip(skip)
+            .filter_map(|entry| {
+                value(&entry.sample)
+                    .filter(|value| value.is_finite())
+                    .map(|value| [entry.elapsed_seconds, f64::from(value)])
+            })
+            .collect()
+    }
+
+    pub fn gear_points(&self, lap_index: Option<usize>) -> Vec<[f64; 2]> {
+        let Some(lap_index) = lap_index else {
+            let mut points = self.points_in(None, |sample| sample.gear as f32);
+            suppress_transient_neutral_gears(&mut points);
+            return points;
+        };
+        let Some(range) = self.history_range(Some(lap_index)) else {
+            return Vec::new();
+        };
+        let Some(first) = self.history.get(range.start) else {
+            return Vec::new();
+        };
+        let entries = self
             .history
             .iter()
             .skip(range.start)
             .take(range.len())
-            .step_by(stride)
+            .collect::<Vec<_>>();
+        let mut timed_gears = entries
+            .iter()
             .map(|entry| {
-                let elapsed = entry.elapsed_seconds - origin;
-                [elapsed, f64::from(value(&entry.sample))]
+                [
+                    entry.elapsed_seconds - first.elapsed_seconds,
+                    f64::from(entry.sample.gear),
+                ]
             })
             .collect::<Vec<_>>();
-        if (range.len() - 1) % stride != 0
-            && let Some(last) = self.history.get(range.end - 1)
-        {
-            points.push([
-                last.elapsed_seconds - origin,
-                f64::from(value(&last.sample)),
-            ]);
-        }
-        points
-    }
+        suppress_transient_neutral_gears(&mut timed_gears);
 
-    pub fn gear_points(&self, lap_index: Option<usize>) -> Vec<[f64; 2]> {
-        let mut points = self.points_in(lap_index, |sample| sample.gear as f32);
-        suppress_transient_neutral_gears(&mut points);
-        points
+        positioned_entry_indices(&self.history, range.clone())
+            .into_iter()
+            .map(|(position, history_index)| {
+                [position, timed_gears[history_index - range.start][1]]
+            })
+            .collect()
     }
 
     pub fn comparison_gear_points(
@@ -350,49 +621,41 @@ impl Session {
         else {
             return Vec::new();
         };
-        let Some(lap_start) = self.history.get(lap_range.start) else {
-            return Vec::new();
-        };
         let Some(reference_start) = reference_session.history.get(reference_range.start) else {
             return Vec::new();
         };
 
-        let reference_samples = reference_session
+        let reference_entries = reference_session
             .history
             .iter()
             .skip(reference_range.start)
             .take(reference_range.len())
-            .filter_map(|entry| {
-                normalized_track_position(&entry.sample).map(|position| {
-                    (
-                        position,
-                        entry.elapsed_seconds - reference_start.elapsed_seconds,
-                        f64::from(entry.sample.gear),
-                    )
-                })
-            })
             .collect::<Vec<_>>();
-        let mut timed_gears = reference_samples
+        let mut timed_gears = reference_entries
             .iter()
-            .map(|(_, elapsed, gear)| [*elapsed, *gear])
+            .map(|entry| {
+                [
+                    entry.elapsed_seconds - reference_start.elapsed_seconds,
+                    f64::from(entry.sample.gear),
+                ]
+            })
             .collect::<Vec<_>>();
         suppress_transient_neutral_gears(&mut timed_gears);
 
-        let mut positioned_gears = reference_samples
-            .into_iter()
-            .zip(timed_gears)
-            .map(|((position, _, _), point)| (position, point[1]))
-            .collect::<Vec<_>>();
-        prepare_positioned_values(&mut positioned_gears);
+        let positioned_gears =
+            positioned_entry_indices(&reference_session.history, reference_range.clone())
+                .into_iter()
+                .map(|(position, history_index)| {
+                    (
+                        position,
+                        timed_gears[history_index - reference_range.start][1],
+                    )
+                })
+                .collect::<Vec<_>>();
 
-        self.history
-            .iter()
-            .skip(lap_range.start)
-            .take(lap_range.len())
-            .filter_map(|entry| {
-                let elapsed = entry.elapsed_seconds - lap_start.elapsed_seconds;
-                let position = normalized_track_position(&entry.sample)?;
-                nearest_value_at_position(&positioned_gears, position).map(|gear| [elapsed, gear])
+        positioned_entries(&self.history, lap_range)
+            .filter_map(|(position, _)| {
+                nearest_value_at_position(&positioned_gears, position).map(|gear| [position, gear])
             })
             .collect()
     }
@@ -404,32 +667,30 @@ impl Session {
         let Some(first) = self.history.get(range.start) else {
             return Vec::new();
         };
-        let origin = self.elapsed_origin(lap_index, first);
         let start_fuel = first.sample.fuel_litres;
-        let stride = self.chart_sample_stride(lap_index, range.len());
+        if lap_index.is_some() {
+            return positioned_entries(&self.history, range)
+                .map(|(position, entry)| {
+                    [
+                        position,
+                        f64::from((start_fuel - entry.sample.fuel_litres).max(0.0)),
+                    ]
+                })
+                .collect();
+        }
+        let origin = self.elapsed_origin(lap_index, first);
 
-        let mut points = self
-            .history
+        self.history
             .iter()
             .skip(range.start)
             .take(range.len())
-            .step_by(stride)
             .map(|entry| {
                 [
                     entry.elapsed_seconds - origin,
                     f64::from((start_fuel - entry.sample.fuel_litres).max(0.0)),
                 ]
             })
-            .collect::<Vec<_>>();
-        if (range.len() - 1) % stride != 0
-            && let Some(last) = self.history.get(range.end - 1)
-        {
-            points.push([
-                last.elapsed_seconds - origin,
-                f64::from((start_fuel - last.sample.fuel_litres).max(0.0)),
-            ]);
-        }
-        points
+            .collect()
     }
 
     pub fn lap_start_fuel_litres(&self, lap_index: usize) -> Option<f32> {
@@ -464,31 +725,20 @@ impl Session {
             return Vec::new();
         };
 
-        let mut reference = reference_session
-            .history
-            .iter()
-            .skip(reference_range.start)
-            .take(reference_range.len())
-            .filter_map(|entry| {
-                normalized_track_position(&entry.sample).map(|position| {
-                    (
-                        position,
-                        entry.elapsed_seconds - reference_start.elapsed_seconds,
-                    )
-                })
+        let reference = positioned_entries(&reference_session.history, reference_range)
+            .map(|(position, entry)| {
+                (
+                    position,
+                    entry.elapsed_seconds - reference_start.elapsed_seconds,
+                )
             })
             .collect::<Vec<_>>();
-        prepare_positioned_values(&mut reference);
 
-        self.history
-            .iter()
-            .skip(lap_range.start)
-            .take(lap_range.len())
-            .filter_map(|entry| {
+        positioned_entries(&self.history, lap_range)
+            .filter_map(|(position, entry)| {
                 let elapsed = entry.elapsed_seconds - lap_start.elapsed_seconds;
-                let position = normalized_track_position(&entry.sample)?;
                 interpolate_value_at_position(&reference, position)
-                    .map(|reference_elapsed| [elapsed, elapsed - reference_elapsed])
+                    .map(|reference_elapsed| [position, elapsed - reference_elapsed])
             })
             .collect()
     }
@@ -506,6 +756,36 @@ impl Session {
             reference_lap_index,
             |sample| f64::from(value(sample)),
         )
+    }
+
+    /// Samples an optional reference channel at the current lap positions.
+    pub fn comparison_points_optional(
+        &self,
+        lap_index: usize,
+        reference_session: &Self,
+        reference_lap_index: usize,
+        value: impl Fn(&TelemetrySample) -> Option<f32>,
+    ) -> Vec<[f64; 2]> {
+        let Some(lap_range) = self.history_range(Some(lap_index)) else {
+            return Vec::new();
+        };
+        let Some(reference_range) = reference_session.history_range(Some(reference_lap_index))
+        else {
+            return Vec::new();
+        };
+        let reference = positioned_entries(&reference_session.history, reference_range)
+            .filter_map(|(position, entry)| {
+                value(&entry.sample)
+                    .filter(|value| value.is_finite())
+                    .map(|value| (position, f64::from(value)))
+            })
+            .collect::<Vec<_>>();
+
+        positioned_entries(&self.history, lap_range)
+            .filter_map(|(position, _)| {
+                interpolate_value_at_position(&reference, position).map(|value| [position, value])
+            })
+            .collect()
     }
 
     pub fn comparison_fuel_used_points(
@@ -545,31 +825,14 @@ impl Session {
         else {
             return Vec::new();
         };
-        let Some(lap_start) = self.history.get(lap_range.start) else {
-            return Vec::new();
-        };
-
-        let mut reference = reference_session
-            .history
-            .iter()
-            .skip(reference_range.start)
-            .take(reference_range.len())
-            .filter_map(|entry| {
-                normalized_track_position(&entry.sample)
-                    .map(|position| (position, value(&entry.sample)))
-            })
+        let reference = positioned_entries(&reference_session.history, reference_range)
+            .map(|(position, entry)| (position, value(&entry.sample)))
             .filter(|(_, value)| value.is_finite())
             .collect::<Vec<_>>();
-        prepare_positioned_values(&mut reference);
 
-        self.history
-            .iter()
-            .skip(lap_range.start)
-            .take(lap_range.len())
-            .filter_map(|entry| {
-                let elapsed = entry.elapsed_seconds - lap_start.elapsed_seconds;
-                let position = normalized_track_position(&entry.sample)?;
-                interpolate_value_at_position(&reference, position).map(|value| [elapsed, value])
+        positioned_entries(&self.history, lap_range)
+            .filter_map(|(position, _)| {
+                interpolate_value_at_position(&reference, position).map(|value| [position, value])
             })
             .collect()
     }
@@ -606,20 +869,10 @@ impl Session {
                 .abs()
                 .total_cmp(&(self.history[*right].elapsed_seconds - target).abs())
         })?;
-        let stride = self.chart_sample_stride(lap_index, range.len());
-        let offset = nearest - range.start;
-        let before = offset / stride * stride;
-        let after = (before + stride).min(range.len() - 1);
-        let sampled_offset = [before, after].into_iter().min_by(|left, right| {
-            (self.history[range.start + *left].elapsed_seconds - target)
-                .abs()
-                .total_cmp(&(self.history[range.start + *right].elapsed_seconds - target).abs())
-        })?;
-        let nearest = range.start + sampled_offset;
         let entry = self.history.get(nearest)?;
 
         Some(FocusedTelemetry {
-            point_index: sampled_offset.div_ceil(stride),
+            point_index: nearest - range.start,
             elapsed_seconds: entry.elapsed_seconds - origin,
             sample: entry.sample,
         })
@@ -637,14 +890,9 @@ impl Session {
         let range = self.history_range(Some(lap_index))?;
         let first = self.history.get(range.start)?;
         let target = normalized_position.clamp(0.0, 1.0);
-        let (point_index, entry) = self
-            .history
-            .iter()
-            .skip(range.start)
-            .take(range.len())
+        let (point_index, (_, entry)) = positioned_entries(&self.history, range)
             .enumerate()
-            .filter(|(_, entry)| normalized_track_position(&entry.sample).is_some())
-            .min_by(|(_, left), (_, right)| {
+            .min_by(|(_, (_, left)), (_, (_, right))| {
                 (left.sample.normalized_car_position - target)
                     .abs()
                     .total_cmp(&(right.sample.normalized_car_position - target).abs())
@@ -672,14 +920,6 @@ impl Session {
             0.0
         } else {
             first.elapsed_seconds
-        }
-    }
-
-    fn chart_sample_stride(&self, lap_index: Option<usize>, sample_count: usize) -> usize {
-        if lap_index.is_none() && matches!(self.source, SessionSource::Live) {
-            sample_count.div_ceil(LIVE_CHART_SAMPLE_LIMIT).max(1)
-        } else {
-            1
         }
     }
 }
@@ -762,9 +1002,43 @@ fn normalized_track_position(sample: &TelemetrySample) -> Option<f64> {
         .then(|| f64::from(sample.normalized_car_position))
 }
 
-fn prepare_positioned_values(values: &mut Vec<(f64, f64)>) {
-    values.sort_by(|left, right| left.0.total_cmp(&right.0));
-    values.dedup_by(|left, right| (left.0 - right.0).abs() <= f64::EPSILON);
+fn positioned_entries(
+    history: &VecDeque<HistoryEntry>,
+    range: Range<usize>,
+) -> impl Iterator<Item = (f64, &HistoryEntry)> {
+    positioned_entry_indices(history, range)
+        .into_iter()
+        .map(|(position, index)| (position, &history[index]))
+}
+
+fn positioned_entry_indices(
+    history: &VecDeque<HistoryEntry>,
+    range: Range<usize>,
+) -> Vec<(f64, usize)> {
+    let mut buckets = vec![None; LAP_DISTANCE_BUCKET_COUNT + 1];
+    for (index, entry) in history
+        .iter()
+        .enumerate()
+        .skip(range.start)
+        .take(range.len())
+    {
+        let Some(position) = normalized_track_position(&entry.sample) else {
+            continue;
+        };
+        let bucket = (position * LAP_DISTANCE_BUCKET_COUNT as f64)
+            .floor()
+            .min(LAP_DISTANCE_BUCKET_COUNT as f64) as usize;
+        let chart_position = position * LAP_DISTANCE_AXIS_MAX;
+        let candidate = (chart_position, index, entry.sample.speed_kmh);
+        if buckets[bucket].is_none_or(|(_, _, speed_kmh)| candidate.2 >= speed_kmh) {
+            buckets[bucket] = Some(candidate);
+        }
+    }
+    buckets
+        .into_iter()
+        .flatten()
+        .map(|(position, index, _)| (position, index))
+        .collect()
 }
 
 fn build_laps(history: &VecDeque<HistoryEntry>) -> Vec<TelemetryLap> {
@@ -848,18 +1122,21 @@ fn seconds_to_milliseconds(seconds: f64) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, path::PathBuf};
+    use std::{
+        collections::VecDeque,
+        time::{Duration, Instant},
+    };
 
     use chiaro_irsdk::{
-        SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot, TelemetryValue,
+        OptionalTelemetryValues, SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot,
+        TelemetryValue,
     };
 
     use super::{
-        ConnectionStatus, HistoryEntry, LIVE_CHART_SAMPLE_LIMIT, LIVE_HISTORY_RETENTION,
-        LIVE_HISTORY_SAMPLE_LIMIT, Session, TelemetryLap, build_laps,
-        suppress_transient_neutral_gears,
+        ConnectionStatus, HistoryEntry, LIVE_HISTORY_RETENTION, LIVE_HISTORY_SAMPLE_LIMIT, Session,
+        TelemetryLap, build_laps, suppress_transient_neutral_gears,
     };
-    use crate::ibt::{IbtInfo, LoadedIbt, TimedSample};
+    use crate::ibt::{IbtInfo, LoadedIbt, RecordingSource, TimedSample};
 
     #[test]
     fn connection_request_transitions_through_connecting() {
@@ -1014,11 +1291,11 @@ mod tests {
 
         assert_eq!(
             current.comparison_points(0, &reference, 0, |sample| sample.speed_kmh),
-            vec![[0.0, 100.0], [5.0, 120.0], [10.0, 140.0]]
+            vec![[0.0, 100.0], [5_000.0, 120.0], [10_000.0, 140.0]]
         );
         assert_eq!(
             current.lap_delta_points_against(0, &reference, 0),
-            vec![[0.0, 0.0], [5.0, -1.0], [10.0, -2.0]]
+            vec![[0.0, 0.0], [5_000.0, -1.0], [10_000.0, -2.0]]
         );
 
         let focused = reference
@@ -1027,6 +1304,72 @@ mod tests {
         assert_eq!(focused.point_index, 1);
         assert_eq!(focused.elapsed_seconds, 6.0);
         assert_eq!(focused.sample.speed_kmh, 120.0);
+    }
+
+    #[test]
+    fn optional_comparison_points_interpolate_only_available_reference_values() {
+        let current = Session {
+            history: [0.0_f32, 0.25, 0.5, 1.0]
+                .into_iter()
+                .enumerate()
+                .map(|(index, normalized_car_position)| HistoryEntry {
+                    elapsed_seconds: index as f64,
+                    sample: TelemetrySample {
+                        normalized_car_position,
+                        ..TelemetrySample::default()
+                    },
+                })
+                .collect(),
+            laps: vec![TelemetryLap {
+                number: 1,
+                start_index: 0,
+                end_index: 4,
+                duration_ms: 3_000,
+                complete: true,
+            }],
+            ..Session::default()
+        };
+        let reference = Session {
+            history: [(0.0_f32, Some(10.0)), (0.5, None), (1.0, Some(30.0))]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (normalized_car_position, torque))| HistoryEntry {
+                    elapsed_seconds: index as f64,
+                    sample: TelemetrySample {
+                        normalized_car_position,
+                        steering_wheel_torque_nm: OptionalTelemetryValues::from_options([torque]),
+                        ..TelemetrySample::default()
+                    },
+                })
+                .collect(),
+            laps: vec![TelemetryLap {
+                number: 1,
+                start_index: 0,
+                end_index: 3,
+                duration_ms: 2_000,
+                complete: true,
+            }],
+            ..Session::default()
+        };
+
+        assert_eq!(
+            current.comparison_points_optional(0, &reference, 0, |sample| {
+                sample.steering_wheel_torque_nm.get(0)
+            }),
+            vec![
+                [0.0, 10.0],
+                [2_500.0, 15.0],
+                [5_000.0, 20.0],
+                [10_000.0, 30.0],
+            ]
+        );
+        assert!(
+            current
+                .comparison_points_optional(0, &reference, 0, |sample| {
+                    sample.brake_line_pressure_bar.get(0)
+                })
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1073,11 +1416,22 @@ mod tests {
             current.comparison_gear_points(0, &reference, 0),
             vec![
                 [0.0, 3.0],
-                [1.0, 3.0],
-                [2.0, 3.0],
-                [3.0, 4.0],
-                [4.0, 4.0],
-                [5.0, 4.0],
+                [1_250.0, 3.0],
+                [3_750.0, 3.0],
+                [6_250.0, 4.0],
+                [8_750.0, 4.0],
+                [10_000.0, 4.0],
+            ]
+        );
+
+        assert_eq!(
+            reference.gear_points(Some(0)),
+            vec![
+                [0.0, 3.0],
+                [2_500.0, 3.0],
+                [5_000.0, 4.0],
+                [7_500.0, 4.0],
+                [10_000.0, 4.0],
             ]
         );
     }
@@ -1134,7 +1488,87 @@ mod tests {
         assert_eq!(session.latest(), Some(&sample));
         assert_eq!(session.latest_frame(), Some(&frame));
         assert_eq!(session.session_info(), Some(&info));
+        assert_eq!(session.session_info_revision(), 1);
         assert_eq!(session.packets_received(), 1);
+    }
+
+    #[test]
+    fn session_info_revision_changes_when_a_reconnect_reuses_the_sdk_counter() {
+        let first = SessionInfo {
+            update_count: 3,
+            yaml: "CarSetup:\n  UpdateCount: 1".to_owned(),
+            raw: Vec::new(),
+        };
+        let second = SessionInfo {
+            update_count: 3,
+            yaml: "CarSetup:\n  UpdateCount: 2".to_owned(),
+            raw: Vec::new(),
+        };
+        let mut session = Session::default();
+
+        session.record_live_batch(
+            std::iter::empty::<(Instant, TelemetrySample)>(),
+            None,
+            Some(first),
+        );
+        let first_revision = session.session_info_revision();
+        session.set_connection_requested(true);
+        let cleared_revision = session.session_info_revision();
+        session.record_live_batch(
+            std::iter::empty::<(Instant, TelemetrySample)>(),
+            None,
+            Some(second.clone()),
+        );
+
+        assert!(cleared_revision > first_revision);
+        assert!(session.session_info_revision() > cleared_revision);
+        assert_eq!(session.session_info(), Some(&second));
+    }
+
+    #[test]
+    fn live_batch_uses_producer_capture_times_and_keeps_optional_metadata() {
+        let frame = TelemetryFrame::try_new(
+            8,
+            Vec::<chiaro_irsdk::VariableMetadata>::new(),
+            Vec::<TelemetryValue>::new(),
+        )
+        .expect("valid empty frame");
+        let info = SessionInfo {
+            update_count: 4,
+            yaml: "WeekendInfo:".to_owned(),
+            raw: b"WeekendInfo:".to_vec(),
+        };
+        let captured_at = Instant::now();
+        let first = TelemetrySample {
+            packet_id: 7,
+            throttle: 0.25,
+            ..TelemetrySample::default()
+        };
+        let second = TelemetrySample {
+            packet_id: 8,
+            throttle: 0.75,
+            ..TelemetrySample::default()
+        };
+        let mut session = Session::default();
+
+        session.record_live_batch(
+            [
+                (captured_at, first),
+                (captured_at + Duration::from_millis(17), second),
+            ],
+            Some(frame.clone()),
+            Some(info.clone()),
+        );
+
+        let points = session.points_in(None, |sample| sample.throttle);
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0], [0.0, 0.25]);
+        assert!((points[1][0] - 0.017).abs() < 1e-9);
+        assert_eq!(points[1][1], 0.75);
+        assert_eq!(session.latest(), Some(&second));
+        assert_eq!(session.latest_frame(), Some(&frame));
+        assert_eq!(session.session_info(), Some(&info));
+        assert_eq!(session.packets_received(), 2);
     }
 
     #[test]
@@ -1174,13 +1608,191 @@ mod tests {
     }
 
     #[test]
-    fn live_chart_sampling_keeps_the_latest_point_and_focus_aligned() {
-        let sample_count = LIVE_CHART_SAMPLE_LIMIT * 2;
-        let history = (0..sample_count)
-            .map(|index| HistoryEntry {
-                elapsed_seconds: index as f64,
+    fn live_points_since_returns_only_unseen_retained_points() {
+        let session = Session {
+            packets_received: 5,
+            history: VecDeque::from([
+                HistoryEntry {
+                    elapsed_seconds: 3.0,
+                    sample: TelemetrySample {
+                        throttle: 0.25,
+                        ..TelemetrySample::default()
+                    },
+                },
+                HistoryEntry {
+                    elapsed_seconds: 4.0,
+                    sample: TelemetrySample {
+                        throttle: 0.5,
+                        ..TelemetrySample::default()
+                    },
+                },
+                HistoryEntry {
+                    elapsed_seconds: 5.0,
+                    sample: TelemetrySample {
+                        throttle: 0.75,
+                        ..TelemetrySample::default()
+                    },
+                },
+            ]),
+            ..Session::default()
+        };
+
+        assert_eq!(
+            session.live_points_since(3, |sample| sample.throttle),
+            vec![[4.0, 0.5], [5.0, 0.75]]
+        );
+        assert_eq!(
+            session.live_points_since(0, |sample| sample.throttle),
+            vec![[3.0, 0.25], [4.0, 0.5], [5.0, 0.75]]
+        );
+        assert!(
+            session
+                .live_points_since(5, |sample| sample.throttle)
+                .is_empty()
+        );
+        assert!(
+            session
+                .live_points_since(10, |sample| sample.throttle)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn live_chart_minimum_x_tracks_the_retained_history_front() {
+        let mut session = Session {
+            history: VecDeque::from([
+                HistoryEntry {
+                    elapsed_seconds: 5.0,
+                    sample: TelemetrySample::default(),
+                },
+                HistoryEntry {
+                    elapsed_seconds: 20.0,
+                    sample: TelemetrySample::default(),
+                },
+            ]),
+            ..Session::default()
+        };
+
+        assert_eq!(session.live_chart_minimum_x(), Some(5.0));
+
+        session.history.pop_front();
+        assert_eq!(session.live_chart_minimum_x(), Some(20.0));
+    }
+
+    #[test]
+    fn live_value_range_ignores_non_finite_values() {
+        let session = Session {
+            history: [-0.25, f32::NAN, f32::INFINITY, 0.75]
+                .into_iter()
+                .enumerate()
+                .map(|(index, throttle)| HistoryEntry {
+                    elapsed_seconds: index as f64,
+                    sample: TelemetrySample {
+                        throttle,
+                        ..TelemetrySample::default()
+                    },
+                })
+                .collect(),
+            ..Session::default()
+        };
+
+        assert_eq!(
+            session.live_value_range(|sample| sample.throttle),
+            Some((-0.25, 0.75))
+        );
+        assert_eq!(session.live_value_range(|_| f32::NAN), None);
+    }
+
+    #[test]
+    fn optional_points_and_ranges_skip_unavailable_and_non_finite_values() {
+        let session = Session {
+            packets_received: 4,
+            history: [Some(3.0), None, Some(f32::NAN), Some(-1.0)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, pressure)| HistoryEntry {
+                    elapsed_seconds: 10.0 + index as f64,
+                    sample: TelemetrySample {
+                        brake_line_pressure_bar: OptionalTelemetryValues::from_options([
+                            pressure, None, None, None,
+                        ]),
+                        ..TelemetrySample::default()
+                    },
+                })
+                .collect(),
+            ..Session::default()
+        };
+
+        assert_eq!(
+            session.points_in_optional(None, |sample| sample.brake_line_pressure_bar.get(0)),
+            vec![[10.0, 3.0], [13.0, -1.0]]
+        );
+        assert_eq!(
+            session
+                .live_points_since_optional(1, |sample| { sample.brake_line_pressure_bar.get(0) }),
+            vec![[13.0, -1.0]]
+        );
+        assert_eq!(
+            session.live_value_range_optional(|sample| sample.brake_line_pressure_bar.get(0)),
+            Some((-1.0, 3.0))
+        );
+        assert!(
+            session
+                .points_in_optional(None, |sample| sample.brake_line_pressure_bar.get(1))
+                .is_empty()
+        );
+        assert_eq!(
+            session.live_value_range_optional(|sample| sample.brake_line_pressure_bar.get(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn selected_lap_chart_points_are_ordered_by_position_and_keep_focus_aligned() {
+        let history = [-1.0_f32, 0.25, 0.25, 0.2, 0.75]
+            .into_iter()
+            .enumerate()
+            .map(|(index, normalized_car_position)| HistoryEntry {
+                elapsed_seconds: index as f64 * 5.0,
                 sample: TelemetrySample {
-                    throttle: index as f32,
+                    normalized_car_position,
+                    throttle: index as f32 / 4.0,
+                    ..TelemetrySample::default()
+                },
+            })
+            .collect();
+        let session = Session {
+            history,
+            laps: vec![TelemetryLap {
+                number: 1,
+                start_index: 0,
+                end_index: 5,
+                duration_ms: 20_000,
+                complete: true,
+            }],
+            ..Session::default()
+        };
+
+        let points = session.points_in(Some(0), |sample| sample.throttle);
+        assert_eq!(points.len(), 3);
+        assert!((points[0][0] - 2_000.0).abs() < 1e-3);
+        assert_eq!(points[0][1], 0.75);
+        assert_eq!(points[1], [2_500.0, 0.5]);
+        assert_eq!(points[2], [7_500.0, 1.0]);
+        let focused = session
+            .focused_telemetry_at_position(0, 0.3)
+            .expect("lap contains a nearby valid track position");
+        assert_eq!(focused.point_index, 1);
+        assert_eq!(focused.sample.normalized_car_position, 0.25);
+    }
+
+    #[test]
+    fn live_chart_keeps_all_retained_points_and_focus_aligned() {
+        let history = (0..LIVE_HISTORY_SAMPLE_LIMIT)
+            .map(|index| HistoryEntry {
+                elapsed_seconds: index as f64 / 60.0,
+                sample: TelemetrySample {
+                    throttle: (index % 2) as f32,
                     ..TelemetrySample::default()
                 },
             })
@@ -1191,17 +1803,18 @@ mod tests {
         };
 
         let points = session.points_in(None, |sample| sample.throttle);
+        let latest_time = (LIVE_HISTORY_SAMPLE_LIMIT - 1) as f64 / 60.0;
         let focused = session
-            .focused_telemetry(None, (sample_count - 1) as f64)
-            .expect("latest sampled point");
+            .focused_telemetry(None, latest_time)
+            .expect("latest retained point");
 
-        assert_eq!(points.len(), LIVE_CHART_SAMPLE_LIMIT + 1);
-        assert_eq!(
-            points.last().map(|point| point[0]),
-            Some((sample_count - 1) as f64)
-        );
+        assert_eq!(points.len(), LIVE_HISTORY_SAMPLE_LIMIT);
+        assert_eq!(points[0][1], 0.0);
+        assert_eq!(points[1][1], 1.0);
+        assert_eq!(points[2][1], 0.0);
+        assert_eq!(points.last().map(|point| point[0]), Some(latest_time));
         assert_eq!(focused.point_index, points.len() - 1);
-        assert_eq!(focused.elapsed_seconds, (sample_count - 1) as f64);
+        assert_eq!(focused.elapsed_seconds, latest_time);
     }
 
     #[test]
@@ -1244,6 +1857,75 @@ mod tests {
     }
 
     #[test]
+    fn live_history_rollover_preserves_the_remaining_chart_points() {
+        let mut session = Session {
+            history: (0..LIVE_HISTORY_SAMPLE_LIMIT)
+                .map(|index| HistoryEntry {
+                    elapsed_seconds: index as f64 / 60.0,
+                    sample: TelemetrySample {
+                        throttle: index as f32,
+                        ..TelemetrySample::default()
+                    },
+                })
+                .collect(),
+            ..Session::default()
+        };
+        let before = session.points_in(None, |sample| sample.throttle);
+
+        session.history.push_back(HistoryEntry {
+            elapsed_seconds: LIVE_HISTORY_RETENTION.as_secs_f64(),
+            sample: TelemetrySample {
+                throttle: LIVE_HISTORY_SAMPLE_LIMIT as f32,
+                ..TelemetrySample::default()
+            },
+        });
+        session.trim_live_history(LIVE_HISTORY_RETENTION.as_secs_f64());
+        let after = session.points_in(None, |sample| sample.throttle);
+
+        assert_eq!(after.len(), LIVE_HISTORY_SAMPLE_LIMIT);
+        assert_eq!(&before[1..], &after[..after.len() - 1]);
+        assert_eq!(
+            after.last(),
+            Some(&[
+                LIVE_HISTORY_RETENTION.as_secs_f64(),
+                LIVE_HISTORY_SAMPLE_LIMIT as f64,
+            ])
+        );
+    }
+
+    #[test]
+    fn live_chart_time_remains_monotonic_across_a_lap_boundary() {
+        let session = Session {
+            history: VecDeque::from([
+                HistoryEntry {
+                    elapsed_seconds: 19.0,
+                    sample: TelemetrySample {
+                        completed_laps: 0,
+                        normalized_car_position: 0.99,
+                        throttle: 0.25,
+                        ..TelemetrySample::default()
+                    },
+                },
+                HistoryEntry {
+                    elapsed_seconds: 20.0,
+                    sample: TelemetrySample {
+                        completed_laps: 1,
+                        normalized_car_position: 0.0,
+                        throttle: 0.75,
+                        ..TelemetrySample::default()
+                    },
+                },
+            ]),
+            ..Session::default()
+        };
+
+        assert_eq!(
+            session.points_in(None, |sample| sample.throttle),
+            vec![[19.0, 0.25], [20.0, 0.75]]
+        );
+    }
+
+    #[test]
     fn loads_an_ibt_recording_on_its_recorded_timeline() {
         let first = TelemetrySample {
             throttle: 0.25,
@@ -1263,7 +1945,7 @@ mod tests {
 
         session.load_ibt(LoadedIbt {
             info: IbtInfo {
-                path: PathBuf::from("session.ibt"),
+                source: RecordingSource::local_file("session.ibt"),
                 file_name: "session.ibt".to_owned(),
                 track_name: "Test Circuit".to_owned(),
                 track_id: None,
@@ -1341,7 +2023,7 @@ mod tests {
 
         session.load_ibt(LoadedIbt {
             info: IbtInfo {
-                path: PathBuf::from("laps.ibt"),
+                source: RecordingSource::local_file("laps.ibt"),
                 file_name: "laps.ibt".to_owned(),
                 track_name: "Test Circuit".to_owned(),
                 track_id: None,
@@ -1381,7 +2063,7 @@ mod tests {
         let points = session.points_in(Some(1), |sample| sample.throttle);
         assert_eq!(points.len(), 2);
         assert_eq!(points[0][0], 0.0);
-        assert_eq!(points[1][0], 58.0);
+        assert!((points[1][0] - 9_800.0).abs() < 1e-3);
         assert!((points[0][1] - 0.3).abs() < 1e-6);
         assert!((points[1][1] - 0.4).abs() < 1e-6);
 
@@ -1395,7 +2077,7 @@ mod tests {
         let delta = session.lap_delta_points(0, 1);
         assert_eq!(delta.len(), 2);
         assert_eq!(delta[0], [0.0, 0.0]);
-        assert!((delta[1][0] - 59.0).abs() < 1e-6);
+        assert!((delta[1][0] - 9_900.0).abs() < 1e-3);
         assert!((delta[1][1] - 1.0).abs() < 1e-6);
     }
 

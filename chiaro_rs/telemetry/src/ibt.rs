@@ -12,9 +12,76 @@ pub struct TimedSample {
     pub sample: TelemetrySample,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordingOrigin {
+    LocalFile,
+    CachedRemote { provider: String, object_id: String },
+}
+
+/// A recording resolved to a local readable file.
+///
+/// Cloud integrations can download an object into a cache and retain its
+/// provider identity here. The IBT parser therefore stays independent from
+/// authentication, storage APIs, and download transports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordingSource {
+    local_path: PathBuf,
+    display_name: String,
+    origin: RecordingOrigin,
+}
+
+impl RecordingSource {
+    pub fn local_file(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let display_name = file_name(&path);
+        Self {
+            local_path: path,
+            display_name,
+            origin: RecordingOrigin::LocalFile,
+        }
+    }
+
+    pub fn cached_remote(
+        local_path: impl Into<PathBuf>,
+        display_name: impl Into<String>,
+        provider: impl Into<String>,
+        object_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            local_path: local_path.into(),
+            display_name: display_name.into(),
+            origin: RecordingOrigin::CachedRemote {
+                provider: provider.into(),
+                object_id: object_id.into(),
+            },
+        }
+    }
+
+    pub fn local_path(&self) -> &Path {
+        &self.local_path
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    pub fn origin(&self) -> &RecordingOrigin {
+        &self.origin
+    }
+
+    pub fn description(&self) -> String {
+        match &self.origin {
+            RecordingOrigin::LocalFile => self.local_path.display().to_string(),
+            RecordingOrigin::CachedRemote { provider, .. } => {
+                format!("{} · {provider}", self.display_name)
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IbtInfo {
-    pub path: PathBuf,
+    pub source: RecordingSource,
     pub file_name: String,
     pub track_name: String,
     pub track_id: Option<i32>,
@@ -36,19 +103,37 @@ pub struct LoadedIbt {
 }
 
 pub fn load_ibt(path: &Path) -> Result<LoadedIbt, String> {
-    let file_name = path.file_name().map_or_else(
-        || path.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    );
-    let mut source =
-        IbtFile::open(path).map_err(|error| format!("Failed to open {file_name}: {error}"))?;
-    let metadata = *source.metadata();
+    load_ibt_source(&RecordingSource::local_file(path))
+}
 
-    if source.is_empty() {
+pub fn load_ibt_source(source: &RecordingSource) -> Result<LoadedIbt, String> {
+    let path = source.local_path();
+    let file_name = source.display_name().to_owned();
+    let file = IbtFile::open(path)
+        .map_err(|error| format!("Failed to open {}: {error}", source.description()))?;
+    let metadata = *file.metadata();
+
+    if file.is_empty() {
         return Err(format!("{file_name} contains no telemetry records"));
     }
+    let session_info = file.session_info().clone();
+    load_open_ibt(file, metadata, session_info, source.clone(), file_name)
+}
 
-    let session_info = source.session_info().clone();
+fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+fn load_open_ibt(
+    mut file: IbtFile,
+    metadata: chiaro_irsdk::IbtMetadata,
+    session_info: SessionInfo,
+    source: RecordingSource,
+    file_name: String,
+) -> Result<LoadedIbt, String> {
     let document = session_info.parse().ok();
     let weekend = document
         .as_ref()
@@ -97,7 +182,7 @@ pub fn load_ibt(path: &Path) -> Result<LoadedIbt, String> {
     let mut samples = Vec::with_capacity(indices.len());
 
     for index in indices {
-        let sample = source.read_sample(index).map_err(|error| {
+        let sample = file.read_sample(index).map_err(|error| {
             format!(
                 "Failed to read record {} from {file_name}: {error}",
                 index + 1
@@ -116,13 +201,13 @@ pub fn load_ibt(path: &Path) -> Result<LoadedIbt, String> {
         });
     }
 
-    let latest_frame = source
+    let latest_frame = file
         .read_frame(metadata.record_count - 1)
         .map_err(|error| format!("Failed to read the last frame from {file_name}: {error}"))?;
 
     Ok(LoadedIbt {
         info: IbtInfo {
-            path: path.to_path_buf(),
+            source,
             file_name,
             track_name,
             track_id,
@@ -172,7 +257,42 @@ fn elapsed_at(index: usize, record_count: usize, duration_seconds: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{chart_sample_limit, elapsed_at, sampled_indices};
+    use std::path::Path;
+
+    use super::{
+        RecordingOrigin, RecordingSource, chart_sample_limit, elapsed_at, sampled_indices,
+    };
+
+    #[test]
+    fn local_recording_source_keeps_the_resolved_file_identity() {
+        let source = RecordingSource::local_file("recordings/session.ibt");
+
+        assert_eq!(source.local_path(), Path::new("recordings/session.ibt"));
+        assert_eq!(source.display_name(), "session.ibt");
+        assert_eq!(source.origin(), &RecordingOrigin::LocalFile);
+        assert_eq!(source.description(), "recordings/session.ibt");
+    }
+
+    #[test]
+    fn cached_remote_source_keeps_cloud_identity_separate_from_its_cache_path() {
+        let source = RecordingSource::cached_remote(
+            "cache/recording.ibt",
+            "Nordschleife.ibt",
+            "Chiaroscuro Cloud",
+            "recording-42",
+        );
+
+        assert_eq!(source.local_path(), Path::new("cache/recording.ibt"));
+        assert_eq!(source.display_name(), "Nordschleife.ibt");
+        assert_eq!(source.description(), "Nordschleife.ibt · Chiaroscuro Cloud");
+        assert_eq!(
+            source.origin(),
+            &RecordingOrigin::CachedRemote {
+                provider: "Chiaroscuro Cloud".to_owned(),
+                object_id: "recording-42".to_owned(),
+            }
+        );
+    }
 
     #[test]
     fn sampling_keeps_both_ends_of_a_recording() {

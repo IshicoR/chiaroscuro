@@ -1,61 +1,38 @@
-use std::time::{Duration, Instant};
-
-use chiaro_theme::typography;
+use chiaro_widgets::{WindowControlKind, tabs::BAR_HEIGHT as TITLE_BAR_HEIGHT, window_control};
 use iced::{
-    Animation, Background, Border, Color, Element, Event,
+    Background, Border, Element, Event,
     Length::{self, Fill, Fixed},
-    Size, Subscription, Task, Theme,
-    alignment::{Horizontal, Vertical},
+    Padding, Size, Subscription, Task, Theme,
+    alignment::Vertical,
     border::Radius,
     event,
     mouse::{self, Interaction},
-    time,
-    widget::{
-        self, MouseArea, Space, Text, button, container::Style, mouse_area, row, text, tooltip,
-    },
+    widget::{self, MouseArea, Space, container::Style, image, mouse_area, row},
     window::{self, Direction, Id, Mode, Settings, icon},
 };
-use iced_fonts::lucide;
 
-const TITLE_BAR_HEIGHT: f32 = 34.0;
 const WINDOW_CORNER_RADIUS: f32 = 10.0;
-const WINDOW_CONTROL_BUTTON_SIZE: f32 = 24.0;
 const RESIZE_HANDLE_SIZE: f32 = 6.0;
-const ICON_SIZE: u32 = 12;
-const BUTTON_CORNER_RADIUS: f32 = 24.0;
-const CONTROL_TRANSITION_DURATION: Duration = Duration::from_millis(140);
-const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
-const TOOLTIP_DELAY: Duration = Duration::from_secs(1);
+const TITLE_BAR_LOGO_SIZE: f32 = 20.0;
+const TITLE_BAR_LOGO_PIXELS: u32 = 40;
+const TITLE_BAR_LOGO_RADIUS: f32 = 4.0;
+const TITLE_BAR_LOGO_RIGHT_PADDING: f32 = 4.0;
 const LOGO_BYTES: &[u8] = include_bytes!("../../assets/logo.png");
 const WINDOW_ICON_SIZE: u32 = 256;
 
 #[derive(Debug, Clone)]
 pub struct WindowState {
-    minimize_hover: Animation<bool>,
-    maximize_hover: Animation<bool>,
-    close_hover: Animation<bool>,
-    now: Instant,
     backgrounded: bool,
     maximized: bool,
-    focused: bool,
-    active_border_color: Color,
-    inactive_border_color: Color,
+    logo: Option<image::Handle>,
 }
 
 impl Default for WindowState {
     fn default() -> Self {
-        let (active_border_color, inactive_border_color) = system_border_colors();
-
         Self {
-            minimize_hover: hover_animation(),
-            maximize_hover: hover_animation(),
-            close_hover: hover_animation(),
-            now: Instant::now(),
             backgrounded: false,
             maximized: false,
-            focused: true,
-            active_border_color,
-            inactive_border_color,
+            logo: title_bar_logo(),
         }
     }
 }
@@ -68,35 +45,6 @@ impl WindowState {
     pub fn uses_rounded_corners(&self) -> bool {
         !self.maximized
     }
-
-    fn border_color(&self) -> Color {
-        if self.focused {
-            self.active_border_color
-        } else {
-            self.inactive_border_color
-        }
-    }
-
-    fn animation_mut(&mut self, control: WindowControl) -> &mut Animation<bool> {
-        match control {
-            WindowControl::Minimize => &mut self.minimize_hover,
-            WindowControl::Maximize => &mut self.maximize_hover,
-            WindowControl::Close => &mut self.close_hover,
-        }
-    }
-
-    fn is_animating(&self) -> bool {
-        self.minimize_hover.is_animating(self.now)
-            || self.maximize_hover.is_animating(self.now)
-            || self.close_hover.is_animating(self.now)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum WindowControl {
-    Minimize,
-    Maximize,
-    Close,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -108,8 +56,6 @@ pub enum WindowMessage {
     CloseRequested,
     Focused,
     Unfocused,
-    Hover(WindowControl, bool),
-    AnimationFrame(Instant),
     CheckMaximized,
     MaximizedChanged(bool),
 }
@@ -128,10 +74,10 @@ pub fn settings() -> Settings {
 }
 
 fn window_icon() -> Option<window::Icon> {
-    let logo = image::load_from_memory(LOGO_BYTES).ok()?.resize_exact(
+    let logo = ::image::load_from_memory(LOGO_BYTES).ok()?.resize_exact(
         WINDOW_ICON_SIZE,
         WINDOW_ICON_SIZE,
-        image::imageops::FilterType::Lanczos3,
+        ::image::imageops::FilterType::Lanczos3,
     );
     let logo = logo.into_rgba8();
     let (width, height) = logo.dimensions();
@@ -139,13 +85,22 @@ fn window_icon() -> Option<window::Icon> {
     icon::from_rgba(logo.into_raw(), width, height).ok()
 }
 
-pub fn subscription(state: &WindowState) -> Subscription<WindowMessage> {
-    let animation = if state.is_animating() {
-        time::every(ANIMATION_FRAME_INTERVAL).map(WindowMessage::AnimationFrame)
-    } else {
-        Subscription::none()
-    };
+fn title_bar_logo() -> Option<image::Handle> {
+    let logo = ::image::load_from_memory(LOGO_BYTES).ok()?.resize_exact(
+        TITLE_BAR_LOGO_PIXELS,
+        TITLE_BAR_LOGO_PIXELS,
+        ::image::imageops::FilterType::Lanczos3,
+    );
+    let logo = logo.into_rgba8();
 
+    Some(image::Handle::from_rgba(
+        TITLE_BAR_LOGO_PIXELS,
+        TITLE_BAR_LOGO_PIXELS,
+        logo.into_raw(),
+    ))
+}
+
+pub fn subscription() -> Subscription<WindowMessage> {
     let close_requests = window::close_requests().map(|_| WindowMessage::CloseRequested);
     let window_events = event::listen_with(|event, _status, _window| match event {
         Event::Window(window::Event::Focused) => Some(WindowMessage::Focused),
@@ -156,7 +111,7 @@ pub fn subscription(state: &WindowState) -> Subscription<WindowMessage> {
         _ => None,
     });
 
-    Subscription::batch([animation, close_requests, window_events])
+    Subscription::batch([close_requests, window_events])
 }
 
 pub fn update(
@@ -172,31 +127,18 @@ pub fn update(
         WindowMessage::Minimize => with_latest(|id| window::minimize(id, true)),
         WindowMessage::ToggleMaximize => with_latest(window::toggle_maximize),
         WindowMessage::CloseRequested => {
-            state.backgrounded = true;
-            background(can_hide_in_background)
+            state.backgrounded = can_hide_in_background;
+            if can_hide_in_background {
+                with_latest(|id| window::set_mode(id, Mode::Hidden))
+            } else {
+                iced::exit()
+            }
         },
         WindowMessage::Focused => {
             state.backgrounded = false;
-            state.focused = true;
-            (state.active_border_color, state.inactive_border_color) = system_border_colors();
             Task::none()
         },
-        WindowMessage::Unfocused => {
-            state.focused = false;
-            Task::none()
-        },
-        WindowMessage::Hover(control, hovered) => {
-            let now = Instant::now();
-            state.now = now;
-            state.animation_mut(control).go_mut(hovered, now);
-
-            Task::none()
-        },
-        WindowMessage::AnimationFrame(now) => {
-            state.now = now;
-
-            Task::none()
-        },
+        WindowMessage::Unfocused => Task::none(),
         WindowMessage::CheckMaximized => {
             with_latest(|id| window::is_maximized(id).map(WindowMessage::MaximizedChanged))
         },
@@ -209,31 +151,64 @@ pub fn update(
 
 pub fn view<'a, AppMessage: Clone + 'a>(
     state: &'a WindowState,
-    title: &'a str,
+    brand_width: f32,
+    tab_bar: Option<Element<'a, AppMessage>>,
     map_message: fn(WindowMessage) -> AppMessage,
 ) -> Element<'a, AppMessage> {
     let rounded = state.uses_rounded_corners();
-    let drag_region = mouse_area(
-        row![
-            text(title).size(14).font(typography::SANS_SEMIBOLD),
-            Space::new().width(Fill)
-        ]
-        .align_y(Vertical::Center)
-        .width(Fill)
-        .height(Fixed(TITLE_BAR_HEIGHT))
-        .padding([0, 6]),
-    )
-    .on_press(map_message(WindowMessage::Drag))
-    .on_double_click(map_message(WindowMessage::ToggleMaximize));
+    let logo: Element<'_, AppMessage> = match &state.logo {
+        Some(handle) => image(handle.clone())
+            .width(TITLE_BAR_LOGO_SIZE)
+            .height(TITLE_BAR_LOGO_SIZE)
+            .border_radius(TITLE_BAR_LOGO_RADIUS)
+            .into(),
+        None => Space::new()
+            .width(TITLE_BAR_LOGO_SIZE)
+            .height(TITLE_BAR_LOGO_SIZE)
+            .into(),
+    };
+    let brand = widget::container(logo)
+        .center_x(Fixed(brand_width))
+        .center_y(Fixed(TITLE_BAR_HEIGHT))
+        .padding(Padding {
+            right: TITLE_BAR_LOGO_RIGHT_PADDING,
+            ..Padding::ZERO
+        });
+    let brand = drag_region(brand, map_message);
+    let remaining_space = drag_region(
+        Space::new().width(Fill).height(Fixed(TITLE_BAR_HEIGHT)),
+        map_message,
+    );
+    let controls = widget::container(controls().map(map_message))
+        .height(Fill)
+        .padding(Padding {
+            right: 6.0,
+            ..Padding::ZERO
+        })
+        .align_y(Vertical::Center);
+    let mut content = row![brand];
+    if let Some(tab_bar) = tab_bar {
+        content = content.push(tab_bar);
+    }
+    let content = content
+        .push(remaining_space)
+        .push(controls)
+        .align_y(Vertical::Center);
 
-    widget::container(
-        row![drag_region, controls(state).map(map_message),].align_y(Vertical::Center),
-    )
-    .width(Fill)
-    .height(TITLE_BAR_HEIGHT)
-    .padding([0, 6])
-    .style(move |theme| bar_style(theme, rounded))
-    .into()
+    widget::container(content)
+        .width(Fill)
+        .height(TITLE_BAR_HEIGHT)
+        .style(move |theme| bar_style(theme, rounded))
+        .into()
+}
+
+fn drag_region<'a, AppMessage: Clone + 'a>(
+    content: impl Into<Element<'a, AppMessage>>,
+    map_message: fn(WindowMessage) -> AppMessage,
+) -> MouseArea<'a, AppMessage> {
+    mouse_area(content)
+        .on_press(map_message(WindowMessage::Drag))
+        .on_double_click(map_message(WindowMessage::ToggleMaximize))
 }
 
 pub fn resize_handles() -> Element<'static, WindowMessage> {
@@ -286,17 +261,6 @@ pub fn resize_handles() -> Element<'static, WindowMessage> {
         .into()
 }
 
-pub fn focus_border(state: &WindowState) -> Element<'static, WindowMessage> {
-    let rounded = state.uses_rounded_corners();
-    let color = state.border_color();
-
-    widget::container(Space::new().width(Fill).height(Fill))
-        .width(Fill)
-        .height(Fill)
-        .style(move |theme| focus_border_style(theme, rounded, color))
-        .into()
-}
-
 pub fn show(state: &mut WindowState) -> Task<WindowMessage> {
     state.backgrounded = false;
 
@@ -319,100 +283,15 @@ fn handle(
         .interaction(interaction)
 }
 
-fn controls(state: &WindowState) -> Element<'_, WindowMessage> {
+fn controls() -> Element<'static, WindowMessage> {
     row![
-        control(
-            &state.minimize_hover,
-            state.now,
-            lucide::minus().size(ICON_SIZE),
-            "Minimize",
-            WindowMessage::Minimize,
-            WindowControl::Minimize,
-            false,
-        ),
-        control(
-            &state.maximize_hover,
-            state.now,
-            lucide::square().size(ICON_SIZE),
-            "Maximize",
-            WindowMessage::ToggleMaximize,
-            WindowControl::Maximize,
-            false,
-        ),
-        control(
-            &state.close_hover,
-            state.now,
-            lucide::x().size(ICON_SIZE),
-            "Close",
-            WindowMessage::CloseRequested,
-            WindowControl::Close,
-            true,
-        ),
+        window_control(WindowControlKind::Minimize, WindowMessage::Minimize,),
+        window_control(WindowControlKind::Maximize, WindowMessage::ToggleMaximize,),
+        window_control(WindowControlKind::Close, WindowMessage::CloseRequested,),
     ]
     .align_y(Vertical::Center)
-    .spacing(6)
+    .spacing(0)
     .into()
-}
-
-fn control<'a>(
-    hover: &'a Animation<bool>,
-    now: Instant,
-    icon: Text<'static>,
-    label: &'static str,
-    msg: WindowMessage,
-    control_kind: WindowControl,
-    destructive: bool,
-) -> Element<'a, WindowMessage> {
-    let hover_progress = hover.interpolate(0.0, 1.0, now);
-    let button = button(icon.align_x(Horizontal::Center).align_y(Vertical::Center))
-        .width(WINDOW_CONTROL_BUTTON_SIZE)
-        .height(WINDOW_CONTROL_BUTTON_SIZE)
-        .padding(0)
-        .on_press(msg)
-        .style(move |theme, status| control_style(theme, status, destructive, hover_progress));
-    let control = mouse_area(button)
-        .on_enter(WindowMessage::Hover(control_kind, true))
-        .on_exit(WindowMessage::Hover(control_kind, false));
-
-    tooltip(control, text(label).size(15), tooltip::Position::Bottom)
-        .delay(TOOLTIP_DELAY)
-        .into()
-}
-
-fn control_style(
-    theme: &Theme,
-    status: button::Status,
-    destructive: bool,
-    hover_progress: f32,
-) -> button::Style {
-    let palette = theme.extended_palette();
-    let base = palette.background.base;
-    let target = if destructive {
-        palette.danger.base
-    } else {
-        palette.background.strong
-    };
-    let progress = if status == button::Status::Pressed {
-        1.0
-    } else {
-        hover_progress.clamp(0.0, 1.0)
-    };
-
-    let mut style = button::Style {
-        background: Some(Background::Color(target.color.scale_alpha(progress))),
-        text_color: mix_color(base.text, target.text, progress),
-        border: Border {
-            radius: BUTTON_CORNER_RADIUS.into(),
-            ..Border::default()
-        },
-        ..button::Style::default()
-    };
-
-    if status == button::Status::Disabled {
-        style.text_color = style.text_color.scale_alpha(0.45);
-    }
-
-    style
 }
 
 fn bar_style(theme: &Theme, rounded: bool) -> Style {
@@ -435,71 +314,6 @@ fn bar_style(theme: &Theme, rounded: bool) -> Style {
         })
 }
 
-fn focus_border_style(_theme: &Theme, rounded: bool, color: Color) -> Style {
-    Style {
-        border: Border {
-            color: if !rounded { Color::TRANSPARENT } else { color },
-            width: if rounded { 1.0 } else { 0.0 },
-            radius: if rounded {
-                WINDOW_CORNER_RADIUS.into()
-            } else {
-                iced::border::Radius::default()
-            },
-        },
-        ..Style::default()
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn system_border_colors() -> (Color, Color) {
-    use winapi::um::winuser::{COLOR_ACTIVEBORDER, COLOR_INACTIVEBORDER, GetSysColor};
-
-    // SAFETY: GetSysColor accepts a constant system color index and has no pointer arguments.
-    let active = unsafe { GetSysColor(COLOR_ACTIVEBORDER) };
-    // SAFETY: GetSysColor accepts a constant system color index and has no pointer arguments.
-    let inactive = unsafe { GetSysColor(COLOR_INACTIVEBORDER) };
-
-    (colorref_to_color(active), colorref_to_color(inactive))
-}
-
-#[cfg(target_os = "windows")]
-fn colorref_to_color(color: u32) -> Color {
-    Color::from_rgb8(
-        (color & 0xff) as u8,
-        ((color >> 8) & 0xff) as u8,
-        ((color >> 16) & 0xff) as u8,
-    )
-}
-
-#[cfg(not(target_os = "windows"))]
-fn system_border_colors() -> (Color, Color) {
-    (
-        Color::from_rgb8(0x80, 0x80, 0x80),
-        Color::from_rgb8(0x40, 0x40, 0x40),
-    )
-}
-
-fn mix_color(start: Color, end: Color, amount: f32) -> Color {
-    Color {
-        r: start.r + (end.r - start.r) * amount,
-        g: start.g + (end.g - start.g) * amount,
-        b: start.b + (end.b - start.b) * amount,
-        a: start.a + (end.a - start.a) * amount,
-    }
-}
-
-fn hover_animation() -> Animation<bool> {
-    Animation::new(false).duration(CONTROL_TRANSITION_DURATION)
-}
-
-fn background(can_hide: bool) -> Task<WindowMessage> {
-    if can_hide {
-        with_latest(|id| window::set_mode(id, Mode::Hidden))
-    } else {
-        with_latest(|id| window::minimize(id, true))
-    }
-}
-
 fn with_latest(
     operation: impl Fn(Id) -> Task<WindowMessage> + Send + 'static,
 ) -> Task<WindowMessage> {
@@ -508,9 +322,21 @@ fn with_latest(
 
 #[cfg(test)]
 mod tests {
-    use iced::{Color, Theme};
+    use super::{WindowMessage, WindowState, settings, update};
 
-    use super::{WindowControl, WindowMessage, WindowState, focus_border_style, settings, update};
+    #[test]
+    fn title_bar_logo_is_predecoded_and_cached_in_window_state() {
+        let state = WindowState::default();
+
+        assert!(matches!(
+            state.logo,
+            Some(iced::widget::image::Handle::Rgba {
+                width: 40,
+                height: 40,
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn settings_enable_window_resizing() {
@@ -533,49 +359,19 @@ mod tests {
         ));
 
         assert!(!state.uses_rounded_corners());
-        assert_eq!(
-            focus_border_style(&Theme::KanagawaWave, false, Color::BLACK)
-                .border
-                .width,
-            0.0
-        );
     }
 
     #[test]
-    fn hover_messages_change_the_matching_animation_target() {
+    fn close_request_backgrounds_only_when_a_tray_can_restore_it() {
         let mut state = WindowState::default();
 
-        drop(update(
-            &mut state,
-            WindowMessage::Hover(WindowControl::Close, true),
-            false,
-        ));
-
-        assert!(state.close_hover.value());
-        assert!(!state.minimize_hover.value());
-        assert!(!state.maximize_hover.value());
-    }
-
-    #[test]
-    fn close_request_backgrounds_until_the_window_is_focused() {
-        let mut state = WindowState::default();
-
-        drop(update(&mut state, WindowMessage::CloseRequested, false));
+        drop(update(&mut state, WindowMessage::CloseRequested, true));
         assert!(state.is_backgrounded());
 
         drop(update(&mut state, WindowMessage::Focused, false));
         assert!(!state.is_backgrounded());
-    }
 
-    #[test]
-    fn focus_events_update_the_window_border_state() {
-        let mut state = WindowState::default();
-        assert!(state.focused);
-
-        drop(update(&mut state, WindowMessage::Unfocused, false));
-        assert!(!state.focused);
-
-        drop(update(&mut state, WindowMessage::Focused, false));
-        assert!(state.focused);
+        drop(update(&mut state, WindowMessage::CloseRequested, false));
+        assert!(!state.is_backgrounded());
     }
 }

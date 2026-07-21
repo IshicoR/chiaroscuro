@@ -35,7 +35,7 @@ pub use flags::*;
 pub use key::{
     ArrayKey, ScalarKey, TelemetryKey, TelemetryPrimitive, VariableAccessError, VariableShape,
 };
-pub use sample::TelemetrySample;
+pub use sample::{OptionalTelemetryValues, TelemetrySample};
 pub use session_info::*;
 use shared_memory::IracingTelemetrySource;
 pub use shared_memory::{IbtFile, IbtFrames, IbtMetadata, IbtReader, IbtSnapshots};

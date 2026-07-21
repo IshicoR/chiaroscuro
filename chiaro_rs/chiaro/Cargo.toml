@@ -23,10 +23,12 @@ chiaro_ibt_picker = { workspace = true }
 chiaro_live_telemetry = { workspace = true }
 chiaro_navigation_ui = { workspace = true }
 chiaro_settings_ui = { workspace = true }
-chiaro_theme = { workspace = true }
+chiaro_widgets = { workspace = true }
 chiaro_tray = { workspace = true }
 chiaro_window = { workspace = true }
 chiaro_telemetry = { workspace = true }
 iced = { workspace = true }
 iced_fonts = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
 rpmalloc = { workspace = true }

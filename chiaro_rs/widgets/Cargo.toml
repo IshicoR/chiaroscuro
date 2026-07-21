@@ -1,6 +1,6 @@
 [package]
-name = "chiaro_theme"
-description = "Theme, typography, and font assets for the Chiaro desktop application."
+name = "chiaro_widgets"
+description = "Reusable Iced widgets for the Chiaro desktop application."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,7 +12,8 @@ license.workspace = true
 workspace = true
 
 [lib]
-path = "src/theme.rs"
+path = "src/widgets.rs"
 
 [dependencies]
-iced = { workspace = true }
+iced = { workspace = true, features = ["advanced"] }
+iced_fonts = { workspace = true }

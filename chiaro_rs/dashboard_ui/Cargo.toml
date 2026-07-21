@@ -16,10 +16,11 @@ path = "src/dashboard_ui.rs"
 
 [dependencies]
 chiaro_actions = { workspace = true }
-chiaro_theme = { workspace = true }
+chiaro_widgets = { workspace = true }
 chiaro_time_series_chart = { workspace = true }
 chiaro_irsdk = { workspace = true }
 chiaro_telemetry = { workspace = true }
 iced = { workspace = true }
 iced_fonts = { workspace = true }
 iced_plot = { workspace = true }
+serde_yaml_ng = { workspace = true }

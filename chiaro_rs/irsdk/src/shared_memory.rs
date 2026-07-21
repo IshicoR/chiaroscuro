@@ -1,8 +1,8 @@
 use std::{io, mem::size_of, ops::Range, sync::Arc};
 
 use crate::{
-    SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot, TelemetryValue,
-    VariableCatalog, VariableMetadata, VariableType,
+    OptionalTelemetryValues, SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot,
+    TelemetryValue, VariableCatalog, VariableMetadata, VariableType,
 };
 
 #[path = "ibt.rs"]
@@ -15,6 +15,7 @@ const IRSDK_MEMORY_MAPPING: &str = "Local\\IRSDKMemMapFileName";
 #[cfg(target_os = "windows")]
 const IRSDK_DATA_VALID_EVENT: &str = "Local\\IRSDKDataValidEvent";
 const IRSDK_HEADER_VERSION: i32 = 2;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const IRSDK_CONNECTED: i32 = 1;
 const IRSDK_MAX_BUFFERS: usize = 4;
 const MAX_VARIABLES: usize = 4_096;
@@ -348,6 +349,11 @@ struct TelemetryVariables {
     wheel_speed: [Option<Variable>; 4],
     tyre_temperature: [Option<Variable>; 4],
     shock_deflection: [Option<Variable>; 4],
+    brake_line_pressure: [Option<Variable>; 4],
+    abs_active: Option<Variable>,
+    steering_wheel_torque: Option<Variable>,
+    tyre_carcass_temperature_imo: [Option<Variable>; 12],
+    tyre_pressure: [Option<Variable>; 4],
     current_lap_time: Variable,
     last_lap_time: Variable,
     best_lap_time: Variable,
@@ -393,6 +399,36 @@ impl TelemetryVariables {
                 table.optional("LRshockDefl", VariableType::Float)?,
                 table.optional("RRshockDefl", VariableType::Float)?,
             ],
+            brake_line_pressure: [
+                table.optional("LFbrakeLinePress", VariableType::Float)?,
+                table.optional("RFbrakeLinePress", VariableType::Float)?,
+                table.optional("LRbrakeLinePress", VariableType::Float)?,
+                table.optional("RRbrakeLinePress", VariableType::Float)?,
+            ],
+            abs_active: table.optional("BrakeABSactive", VariableType::Bool)?,
+            steering_wheel_torque: table.optional("SteeringWheelTorque", VariableType::Float)?,
+            // The SDK names carcass channels by the car-relative left/center/right
+            // side. Convert them to inside/middle/outside for each tyre.
+            tyre_carcass_temperature_imo: [
+                table.optional("LFtempCR", VariableType::Float)?,
+                table.optional("LFtempCM", VariableType::Float)?,
+                table.optional("LFtempCL", VariableType::Float)?,
+                table.optional("RFtempCL", VariableType::Float)?,
+                table.optional("RFtempCM", VariableType::Float)?,
+                table.optional("RFtempCR", VariableType::Float)?,
+                table.optional("LRtempCR", VariableType::Float)?,
+                table.optional("LRtempCM", VariableType::Float)?,
+                table.optional("LRtempCL", VariableType::Float)?,
+                table.optional("RRtempCL", VariableType::Float)?,
+                table.optional("RRtempCM", VariableType::Float)?,
+                table.optional("RRtempCR", VariableType::Float)?,
+            ],
+            tyre_pressure: [
+                table.optional("LFpressure", VariableType::Float)?,
+                table.optional("RFpressure", VariableType::Float)?,
+                table.optional("LRpressure", VariableType::Float)?,
+                table.optional("RRpressure", VariableType::Float)?,
+            ],
             current_lap_time: table.require("LapCurrentLapTime", VariableType::Float)?,
             last_lap_time: table.require("LapLastLapTime", VariableType::Float)?,
             best_lap_time: table.require("LapBestLapTime", VariableType::Float)?,
@@ -404,7 +440,25 @@ impl TelemetryVariables {
         })
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn sample_live(&self, tick_count: i32, data: &[u8]) -> io::Result<TelemetrySample> {
+        self.sample_with_source(tick_count, data, SampleSource::Live)
+    }
+
+    fn sample_disk(&self, tick_count: i32, data: &[u8]) -> io::Result<TelemetrySample> {
+        self.sample_with_source(tick_count, data, SampleSource::Disk)
+    }
+
     fn sample(&self, tick_count: i32, data: &[u8]) -> io::Result<TelemetrySample> {
+        self.sample_disk(tick_count, data)
+    }
+
+    fn sample_with_source(
+        &self,
+        tick_count: i32,
+        data: &[u8],
+        source: SampleSource,
+    ) -> io::Result<TelemetrySample> {
         let speed_metres_per_second = self.speed.float(data)?;
         let wheel_slip =
             std::array::from_fn(|index| {
@@ -421,6 +475,23 @@ impl TelemetryVariables {
         let suspension_travel_m = collect_array(std::array::from_fn(|index| {
             optional_float(self.shock_deflection[index], data)
         }))?;
+        let brake_line_pressure_bar = if source == SampleSource::Disk {
+            optional_values(self.brake_line_pressure, data)?
+        } else {
+            OptionalTelemetryValues::default()
+        };
+        let steering_wheel_torque_nm =
+            OptionalTelemetryValues::from_options([optional_float_value(
+                self.steering_wheel_torque,
+                data,
+            )?]);
+        let tyre_carcass_temperature_imo_c =
+            optional_values(self.tyre_carcass_temperature_imo, data)?;
+        let tyre_pressure_kpa = if source == SampleSource::Disk {
+            optional_values(self.tyre_pressure, data)?
+        } else {
+            OptionalTelemetryValues::default()
+        };
 
         Ok(TelemetrySample {
             packet_id: tick_count,
@@ -441,6 +512,11 @@ impl TelemetryVariables {
             wheel_slip,
             tyre_core_temperature_c,
             suspension_travel_m,
+            brake_line_pressure_bar,
+            abs_active: optional_bool(self.abs_active, data)?,
+            steering_wheel_torque_nm,
+            tyre_carcass_temperature_imo_c,
+            tyre_pressure_kpa,
             current_lap_ms: seconds_to_milliseconds(f64::from(self.current_lap_time.float(data)?)),
             last_lap_ms: seconds_to_milliseconds(f64::from(self.last_lap_time.float(data)?)),
             best_lap_ms: seconds_to_milliseconds(f64::from(self.best_lap_time.float(data)?)),
@@ -453,12 +529,47 @@ impl TelemetryVariables {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SampleSource {
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Live,
+    Disk,
+}
+
 fn optional_float(variable: Option<Variable>, data: &[u8]) -> io::Result<f32> {
     variable.map_or(Ok(0.0), |variable| variable.float(data))
 }
 
+fn optional_float_value(variable: Option<Variable>, data: &[u8]) -> io::Result<Option<f32>> {
+    variable.map(|variable| variable.float(data)).transpose()
+}
+
+fn optional_bool(variable: Option<Variable>, data: &[u8]) -> io::Result<Option<bool>> {
+    variable.map(|variable| variable.boolean(data)).transpose()
+}
+
+fn optional_values<const N: usize>(
+    variables: [Option<Variable>; N],
+    data: &[u8],
+) -> io::Result<OptionalTelemetryValues<N>> {
+    let values = collect_option_array(std::array::from_fn(|index| {
+        optional_float_value(variables[index], data)
+    }))?;
+    Ok(OptionalTelemetryValues::from_options(values))
+}
+
 fn collect_array<const N: usize>(values: [io::Result<f32>; N]) -> io::Result<[f32; N]> {
     let mut output = [0.0; N];
+    for (output, value) in output.iter_mut().zip(values) {
+        *output = value?;
+    }
+    Ok(output)
+}
+
+fn collect_option_array<const N: usize>(
+    values: [io::Result<Option<f32>>; N],
+) -> io::Result<[Option<f32>; N]> {
+    let mut output = [None; N];
     for (output, value) in output.iter_mut().zip(values) {
         *output = value?;
     }
@@ -539,6 +650,7 @@ impl HeaderLayout {
         ))
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     fn matches(self, header: &Header) -> bool {
         usize::try_from(header.num_variables) == Ok(self.num_variables)
             && usize::try_from(header.variable_header_offset) == Ok(self.variable_header_offset)
@@ -597,6 +709,7 @@ fn read_bytes<const N: usize>(data: &[u8], offset: usize) -> io::Result<[u8; N]>
         .map_err(|_| invalid_data("iRacing variable has an invalid length"))
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn latest_buffer_index(header: &Header, num_buffers: usize) -> usize {
     header
         .variable_buffers
@@ -607,6 +720,7 @@ fn latest_buffer_index(header: &Header, num_buffers: usize) -> usize {
         .map_or(0, |(index, _)| index)
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn snapshot_is_stable(before: VariableBuffer, after: VariableBuffer) -> bool {
     before.tick_count == after.tick_count
         && (after.tick_count_begin == 0 || before.tick_count == after.tick_count_begin)
@@ -658,7 +772,7 @@ impl IracingTelemetrySource {
             .as_ref()
             .map_err(|error| invalid_data(error.to_string()))?;
         let tick_count = self.mapping.copy_latest(self.layout, &mut self.buffer)?;
-        sample_variables.sample(tick_count, &self.buffer)
+        sample_variables.sample_live(tick_count, &self.buffer)
     }
 
     pub(crate) fn read_frame(&mut self) -> io::Result<TelemetryFrame> {
@@ -677,7 +791,7 @@ impl IracingTelemetrySource {
             .as_ref()
             .map_err(|error| invalid_data(error.to_string()))?;
         let tick_count = self.mapping.copy_latest(self.layout, &mut self.buffer)?;
-        let sample = sample_variables.sample(tick_count, &self.buffer)?;
+        let sample = sample_variables.sample_live(tick_count, &self.buffer)?;
         let frame = self.table.frame(tick_count, &self.buffer)?;
         Ok(TelemetrySnapshot { sample, frame })
     }
@@ -1277,27 +1391,32 @@ mod tests {
         let mut headers = Vec::new();
         let mut data = Vec::new();
 
-        add_f32(&mut headers, &mut data, "Speed", 50.0);
-        add_f32(&mut headers, &mut data, "RPM", 6_543.6);
-        add_i32(&mut headers, &mut data, "Gear", 3);
-        add_f32(&mut headers, &mut data, "Throttle", 0.8);
-        add_f32(&mut headers, &mut data, "Brake", 0.2);
-        add_f32(&mut headers, &mut data, "Clutch", 0.1);
-        add_f32(&mut headers, &mut data, "SteeringWheelAngle", -0.25);
-        add_f32(&mut headers, &mut data, "FuelLevel", 42.5);
-        add_f32(&mut headers, &mut data, "LatAccel", 9.806_65);
-        add_f32(&mut headers, &mut data, "LongAccel", -19.613_3);
-        add_f32(&mut headers, &mut data, "VertAccel", 4.903_325);
-        add_f32(&mut headers, &mut data, "YawRate", 0.5);
+        add_required_sample_variables(&mut headers, &mut data);
         for (name, value) in [
             ("LFspeed", 51.0),
             ("RFspeed", 49.0),
             ("LRspeed", 50.0),
             ("RRspeed", 52.0),
-            ("LFtempCM", 80.0),
-            ("RFtempCM", 81.0),
-            ("LRtempCM", 82.0),
-            ("RRtempCM", 83.0),
+            ("LFbrakeLinePress", 10.0),
+            ("RFbrakeLinePress", 20.0),
+            ("LRbrakeLinePress", 30.0),
+            ("RRbrakeLinePress", 40.0),
+            ("LFtempCL", 70.0),
+            ("LFtempCM", 71.0),
+            ("LFtempCR", 72.0),
+            ("RFtempCL", 73.0),
+            ("RFtempCM", 74.0),
+            ("RFtempCR", 75.0),
+            ("LRtempCL", 76.0),
+            ("LRtempCM", 77.0),
+            ("LRtempCR", 78.0),
+            ("RRtempCL", 79.0),
+            ("RRtempCM", 80.0),
+            ("RRtempCR", 81.0),
+            ("LFpressure", 150.0),
+            ("RFpressure", 151.0),
+            ("LRpressure", 152.0),
+            ("RRpressure", 153.0),
             ("LFshockDefl", 0.01),
             ("RFshockDefl", 0.02),
             ("LRshockDefl", 0.03),
@@ -1305,18 +1424,17 @@ mod tests {
         ] {
             add_f32(&mut headers, &mut data, name, value);
         }
-        add_f32(&mut headers, &mut data, "LapCurrentLapTime", 42.125);
-        add_f32(&mut headers, &mut data, "LapLastLapTime", 91.25);
-        add_f32(&mut headers, &mut data, "LapBestLapTime", 90.875);
-        add_i32(&mut headers, &mut data, "LapCompleted", 7);
-        add_i32(&mut headers, &mut data, "PlayerCarPosition", 4);
-        add_bool(&mut headers, &mut data, "OnPitRoad", true);
-        add_f32(&mut headers, &mut data, "LapDistPct", 0.625);
-        add_f64(&mut headers, &mut data, "SessionTimeRemain", 512.25);
+        add_bool(&mut headers, &mut data, "BrakeABSactive", true);
+        add_f32(&mut headers, &mut data, "SteeringWheelTorque", -3.25);
 
         let table = VariableTable::parse(&headers, data.len()).expect("valid variable table");
         let variables = TelemetryVariables::resolve(&table).expect("required variables");
-        let sample = variables.sample(1234, &data).expect("valid sample");
+        let sample = variables
+            .sample_disk(1234, &data)
+            .expect("valid disk sample");
+        let live_sample = variables
+            .sample_live(1234, &data)
+            .expect("valid live sample");
 
         assert_eq!(sample.packet_id, 1234);
         assert_eq!(sample.speed_kmh, 180.0);
@@ -1325,13 +1443,99 @@ mod tests {
         assert_eq!(sample.acceleration_g, [1.0, -2.0, 0.5]);
         assert_eq!(sample.yaw_rate_rad_s, 0.5);
         assert_eq!(sample.wheel_slip, [0.02, -0.02, 0.0, 0.04]);
-        assert_eq!(sample.tyre_core_temperature_c, [80.0, 81.0, 82.0, 83.0]);
+        assert_eq!(sample.tyre_core_temperature_c, [71.0, 74.0, 77.0, 80.0]);
         assert_eq!(sample.suspension_travel_m, [0.01, 0.02, 0.03, 0.04]);
+        assert_eq!(
+            sample.brake_line_pressure_bar.iter().collect::<Vec<_>>(),
+            [Some(10.0), Some(20.0), Some(30.0), Some(40.0)]
+        );
+        assert_eq!(sample.abs_active, Some(true));
+        assert_eq!(sample.steering_wheel_torque_nm.get(0), Some(-3.25));
+        assert_eq!(
+            sample
+                .tyre_carcass_temperature_imo_c
+                .iter()
+                .collect::<Vec<_>>(),
+            [
+                Some(72.0),
+                Some(71.0),
+                Some(70.0),
+                Some(73.0),
+                Some(74.0),
+                Some(75.0),
+                Some(78.0),
+                Some(77.0),
+                Some(76.0),
+                Some(79.0),
+                Some(80.0),
+                Some(81.0),
+            ]
+        );
+        assert_eq!(
+            sample.tyre_pressure_kpa.iter().collect::<Vec<_>>(),
+            [Some(150.0), Some(151.0), Some(152.0), Some(153.0)]
+        );
+        assert!(
+            live_sample
+                .brake_line_pressure_bar
+                .iter()
+                .all(|value| value.is_none())
+        );
+        assert!(
+            live_sample
+                .tyre_pressure_kpa
+                .iter()
+                .all(|value| value.is_none())
+        );
+        assert_eq!(live_sample.abs_active, Some(true));
+        assert_eq!(live_sample.steering_wheel_torque_nm.get(0), Some(-3.25));
+        assert_eq!(
+            live_sample
+                .tyre_carcass_temperature_imo_c
+                .iter()
+                .collect::<Vec<_>>(),
+            sample
+                .tyre_carcass_temperature_imo_c
+                .iter()
+                .collect::<Vec<_>>()
+        );
         assert_eq!(sample.current_lap_ms, 42_125);
         assert_eq!(sample.last_lap_ms, 91_250);
         assert_eq!(sample.best_lap_ms, 90_875);
         assert!(sample.in_pit);
         assert_eq!(sample.session_time_left_s, 512.25);
+    }
+
+    #[test]
+    fn missing_optional_sample_variables_remain_unavailable() {
+        let mut headers = Vec::new();
+        let mut data = Vec::new();
+        add_required_sample_variables(&mut headers, &mut data);
+
+        let table = VariableTable::parse(&headers, data.len()).expect("valid variable table");
+        let variables = TelemetryVariables::resolve(&table).expect("required variables");
+
+        for sample in [
+            variables.sample_live(1, &data).expect("valid live sample"),
+            variables.sample_disk(2, &data).expect("valid disk sample"),
+        ] {
+            assert!(
+                sample
+                    .brake_line_pressure_bar
+                    .iter()
+                    .all(|value| value.is_none())
+            );
+            assert_eq!(sample.abs_active, None);
+            assert_eq!(sample.steering_wheel_torque_nm.get(0), None);
+            assert!(
+                sample
+                    .tyre_carcass_temperature_imo_c
+                    .iter()
+                    .all(|value| value.is_none())
+            );
+            assert!(sample.tyre_pressure_kpa.iter().all(|value| value.is_none()));
+            assert!(sample.is_finite());
+        }
     }
 
     #[test]
@@ -1344,6 +1548,43 @@ mod tests {
         let error = TelemetryVariables::resolve(&table).expect_err("Speed must be a float");
 
         assert!(error.to_string().contains("expected a scalar float"));
+    }
+
+    #[test]
+    fn rejects_optional_sample_variables_with_the_wrong_primitive_type() {
+        let mut headers = Vec::new();
+        let mut data = Vec::new();
+        add_required_sample_variables(&mut headers, &mut data);
+        add_i32(&mut headers, &mut data, "BrakeABSactive", 1);
+
+        let table = VariableTable::parse(&headers, data.len()).expect("valid variable table");
+        let error = TelemetryVariables::resolve(&table)
+            .expect_err("BrakeABSactive must be a boolean when present");
+
+        assert!(error.to_string().contains("expected a scalar bool"));
+    }
+
+    fn add_required_sample_variables(headers: &mut Vec<VariableHeader>, data: &mut Vec<u8>) {
+        add_f32(headers, data, "Speed", 50.0);
+        add_f32(headers, data, "RPM", 6_543.6);
+        add_i32(headers, data, "Gear", 3);
+        add_f32(headers, data, "Throttle", 0.8);
+        add_f32(headers, data, "Brake", 0.2);
+        add_f32(headers, data, "Clutch", 0.1);
+        add_f32(headers, data, "SteeringWheelAngle", -0.25);
+        add_f32(headers, data, "FuelLevel", 42.5);
+        add_f32(headers, data, "LatAccel", 9.806_65);
+        add_f32(headers, data, "LongAccel", -19.613_3);
+        add_f32(headers, data, "VertAccel", 4.903_325);
+        add_f32(headers, data, "YawRate", 0.5);
+        add_f32(headers, data, "LapCurrentLapTime", 42.125);
+        add_f32(headers, data, "LapLastLapTime", 91.25);
+        add_f32(headers, data, "LapBestLapTime", 90.875);
+        add_i32(headers, data, "LapCompleted", 7);
+        add_i32(headers, data, "PlayerCarPosition", 4);
+        add_bool(headers, data, "OnPitRoad", true);
+        add_f32(headers, data, "LapDistPct", 0.625);
+        add_f64(headers, data, "SessionTimeRemain", 512.25);
     }
 
     fn add_f32(headers: &mut Vec<VariableHeader>, data: &mut Vec<u8>, name: &str, value: f32) {

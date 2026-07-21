@@ -1,6 +1,0 @@
-[target.'cfg(target_os = "linux")']
-linker = "clang"
-rustflags = [
-    "-C", "symbol-mangling-version=v0",
-    "-C", "link-arg=-fuse-ld=mold",
-]

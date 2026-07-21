@@ -1,15 +1,16 @@
 use chiaro_actions::Screen;
+use chiaro_widgets::navigation_item;
 use iced::{
     Background, Border, Element, Length, Theme,
-    alignment::{Horizontal, Vertical},
-    widget::{Space, Text, button, column, container, row, rule, text},
+    widget::{Space, column, container},
 };
 use iced_fonts::lucide;
 
-const NAVIGATION_WIDTH: f32 = 76.0;
-const DESTINATION_HEIGHT: f32 = 62.0;
+/// Width shared by the navigation rail and the title-bar brand area.
+pub const WIDTH: f32 = 48.0;
 const ICON_SIZE: u32 = 20;
-const BUTTON_CORNER_RADIUS: f32 = 6.0;
+const RAIL_VERTICAL_PADDING: u16 = 8;
+const RAIL_HORIZONTAL_PADDING: u16 = 4;
 const WINDOW_CORNER_RADIUS: f32 = 10.0;
 
 #[derive(Debug, Clone, Default)]
@@ -61,49 +62,25 @@ pub fn view(state: &Navigation, rounded: bool) -> Element<'_, NavigationMessage>
     .clip(true);
 
     let sidebar = container(destinations)
-        .width(Length::Fill)
+        .width(Length::Fixed(WIDTH))
         .height(Length::Fill)
-        .padding([12, 6])
+        .padding([RAIL_VERTICAL_PADDING, RAIL_HORIZONTAL_PADDING])
         .style(move |theme| sidebar_style(theme, rounded))
         .clip(true);
 
-    row![sidebar, rule::vertical(1)]
-        .width(Length::Fixed(NAVIGATION_WIDTH))
-        .height(Length::Fill)
-        .clip(true)
-        .into()
+    sidebar.into()
 }
 
 fn destination(
-    icon: Text<'static>,
+    icon: impl Into<Element<'static, NavigationMessage>>,
     screen: Screen,
     current: Screen,
 ) -> Element<'static, NavigationMessage> {
     let selected = screen == current;
-    let label = container(
-        column![
-            icon.width(Length::Fill)
-                .height(Length::Fixed(22.0))
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-            text(screen.title())
-                .size(12)
-                .width(Length::Fill)
-                .align_x(Horizontal::Center),
-        ]
-        .spacing(4)
-        .width(Length::Fill)
-        .align_x(Horizontal::Center),
-    )
-    .center(Length::Fill);
 
-    button(label)
-        .width(Length::Fill)
-        .height(Length::Fixed(DESTINATION_HEIGHT))
-        .padding(0)
+    navigation_item(icon, screen.title())
+        .selected(selected)
         .on_press(NavigationMessage::Navigate(screen))
-        .style(move |theme, status| destination_style(theme, status, selected))
-        .clip(true)
         .into()
 }
 
@@ -128,30 +105,20 @@ fn sidebar_style(theme: &Theme, rounded: bool) -> container::Style {
     }
 }
 
-fn destination_style(theme: &Theme, status: button::Status, selected: bool) -> button::Style {
-    let palette = theme.extended_palette();
-    let colors = if selected {
-        Some(palette.primary.weak)
-    } else if status == button::Status::Hovered || status == button::Status::Pressed {
-        Some(palette.background.neutral)
-    } else {
-        None
-    };
-
-    button::Style {
-        background: colors.map(|colors| Background::Color(colors.color)),
-        text_color: colors.map_or(palette.background.weaker.text, |colors| colors.text),
-        border: Border {
-            radius: BUTTON_CORNER_RADIUS.into(),
-            ..Border::default()
-        },
-        ..button::Style::default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Navigation, NavigationMessage, Screen, update};
+    use super::{
+        Navigation, NavigationMessage, RAIL_HORIZONTAL_PADDING, RAIL_VERTICAL_PADDING, Screen,
+        WIDTH, update,
+    };
+
+    #[test]
+    fn compact_rail_keeps_a_40_pixel_target_inside_48_pixels() {
+        assert_eq!(WIDTH, 48.0);
+        assert_eq!(RAIL_HORIZONTAL_PADDING, 4);
+        assert_eq!(RAIL_VERTICAL_PADDING, 8);
+        assert_eq!(WIDTH - f32::from(RAIL_HORIZONTAL_PADDING) * 2.0, 40.0);
+    }
 
     #[test]
     fn navigation_selects_a_page() {

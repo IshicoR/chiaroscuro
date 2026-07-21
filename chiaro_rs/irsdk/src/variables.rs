@@ -152,10 +152,27 @@ pub mod chassis {
     pub const RF_SPEED: ScalarKey<f32> = ScalarKey::new("RFspeed");
     pub const LR_SPEED: ScalarKey<f32> = ScalarKey::new("LRspeed");
     pub const RR_SPEED: ScalarKey<f32> = ScalarKey::new("RRspeed");
+    pub const BRAKE_ABS_ACTIVE: ScalarKey<bool> = ScalarKey::new("BrakeABSactive");
+    pub const LF_BRAKE_LINE_PRESS: ScalarKey<f32> = ScalarKey::new("LFbrakeLinePress");
+    pub const RF_BRAKE_LINE_PRESS: ScalarKey<f32> = ScalarKey::new("RFbrakeLinePress");
+    pub const LR_BRAKE_LINE_PRESS: ScalarKey<f32> = ScalarKey::new("LRbrakeLinePress");
+    pub const RR_BRAKE_LINE_PRESS: ScalarKey<f32> = ScalarKey::new("RRbrakeLinePress");
+    pub const LF_TEMP_CL: ScalarKey<f32> = ScalarKey::new("LFtempCL");
     pub const LF_TEMP_CM: ScalarKey<f32> = ScalarKey::new("LFtempCM");
+    pub const LF_TEMP_CR: ScalarKey<f32> = ScalarKey::new("LFtempCR");
+    pub const RF_TEMP_CL: ScalarKey<f32> = ScalarKey::new("RFtempCL");
     pub const RF_TEMP_CM: ScalarKey<f32> = ScalarKey::new("RFtempCM");
+    pub const RF_TEMP_CR: ScalarKey<f32> = ScalarKey::new("RFtempCR");
+    pub const LR_TEMP_CL: ScalarKey<f32> = ScalarKey::new("LRtempCL");
     pub const LR_TEMP_CM: ScalarKey<f32> = ScalarKey::new("LRtempCM");
+    pub const LR_TEMP_CR: ScalarKey<f32> = ScalarKey::new("LRtempCR");
+    pub const RR_TEMP_CL: ScalarKey<f32> = ScalarKey::new("RRtempCL");
     pub const RR_TEMP_CM: ScalarKey<f32> = ScalarKey::new("RRtempCM");
+    pub const RR_TEMP_CR: ScalarKey<f32> = ScalarKey::new("RRtempCR");
+    pub const LF_PRESSURE: ScalarKey<f32> = ScalarKey::new("LFpressure");
+    pub const RF_PRESSURE: ScalarKey<f32> = ScalarKey::new("RFpressure");
+    pub const LR_PRESSURE: ScalarKey<f32> = ScalarKey::new("LRpressure");
+    pub const RR_PRESSURE: ScalarKey<f32> = ScalarKey::new("RRpressure");
     pub const LF_SHOCK_DEFL: ScalarKey<f32> = ScalarKey::new("LFshockDefl");
     pub const RF_SHOCK_DEFL: ScalarKey<f32> = ScalarKey::new("RFshockDefl");
     pub const LR_SHOCK_DEFL: ScalarKey<f32> = ScalarKey::new("LRshockDefl");
@@ -340,10 +357,27 @@ mod tests {
             chassis::RF_SPEED => "RFspeed",
             chassis::LR_SPEED => "LRspeed",
             chassis::RR_SPEED => "RRspeed",
+            chassis::BRAKE_ABS_ACTIVE => "BrakeABSactive",
+            chassis::LF_BRAKE_LINE_PRESS => "LFbrakeLinePress",
+            chassis::RF_BRAKE_LINE_PRESS => "RFbrakeLinePress",
+            chassis::LR_BRAKE_LINE_PRESS => "LRbrakeLinePress",
+            chassis::RR_BRAKE_LINE_PRESS => "RRbrakeLinePress",
+            chassis::LF_TEMP_CL => "LFtempCL",
             chassis::LF_TEMP_CM => "LFtempCM",
+            chassis::LF_TEMP_CR => "LFtempCR",
+            chassis::RF_TEMP_CL => "RFtempCL",
             chassis::RF_TEMP_CM => "RFtempCM",
+            chassis::RF_TEMP_CR => "RFtempCR",
+            chassis::LR_TEMP_CL => "LRtempCL",
             chassis::LR_TEMP_CM => "LRtempCM",
+            chassis::LR_TEMP_CR => "LRtempCR",
+            chassis::RR_TEMP_CL => "RRtempCL",
             chassis::RR_TEMP_CM => "RRtempCM",
+            chassis::RR_TEMP_CR => "RRtempCR",
+            chassis::LF_PRESSURE => "LFpressure",
+            chassis::RF_PRESSURE => "RFpressure",
+            chassis::LR_PRESSURE => "LRpressure",
+            chassis::RR_PRESSURE => "RRpressure",
             chassis::LF_SHOCK_DEFL => "LFshockDefl",
             chassis::RF_SHOCK_DEFL => "RFshockDefl",
             chassis::LR_SHOCK_DEFL => "LRshockDefl",
@@ -390,5 +424,12 @@ mod tests {
         assert_eq!(player::CAR_LEFT_RIGHT.shape(), VariableShape::Scalar);
         assert_eq!(cars::CAR_IDX_PACE_FLAGS.value_type(), VariableType::Int);
         assert_eq!(cars::CAR_IDX_PACE_FLAGS.shape(), VariableShape::Array);
+        assert_eq!(chassis::BRAKE_ABS_ACTIVE.value_type(), VariableType::Bool);
+        assert_eq!(
+            chassis::LF_BRAKE_LINE_PRESS.value_type(),
+            VariableType::Float
+        );
+        assert_eq!(chassis::LF_TEMP_CL.value_type(), VariableType::Float);
+        assert_eq!(chassis::LF_PRESSURE.value_type(), VariableType::Float);
     }
 }
