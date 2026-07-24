@@ -1,3 +1,4 @@
+use ::image::imageops::FilterType::Lanczos3;
 use chiaro_widgets::{WindowControlKind, tabs::BAR_HEIGHT as TITLE_BAR_HEIGHT, window_control};
 use iced::{
     Background, Border, Element, Event,
@@ -11,13 +12,44 @@ use iced::{
     window::{self, Direction, Id, Mode, Settings, icon},
 };
 
+/// Default width of the application window in pixels
+const INITIAL_WINDOW_WIDTH: f32 = 1380.0;
+
+/// Default height of the application window in pixels
+const INITIAL_WINDOW_HEIGHT: f32 = 720.0;
+
+/// Minimum width of the application window in pixels
+const MIN_WINDOW_WIDTH: f32 = 960.0;
+
+/// Minimum height of the application window in pixels
+const MIN_WINDOW_HEIGHT: f32 = 640.0;
+
+/// Spacing between window control buttons (minimize, maximize, close)
+const WINDOW_CONTROL_SPACING: f32 = 6.0;
+
+/// Corner radius for the window's rounded corners
 const WINDOW_CORNER_RADIUS: f32 = 10.0;
+
+/// Size of the resize handle area in pixels
 const RESIZE_HANDLE_SIZE: f32 = 6.0;
+
+/// Right padding for the title bar area
+const TITLE_BAR_RIGHT_PADDING: f32 = 6.0;
+
+/// Display size of the title bar logo in pixels
 const TITLE_BAR_LOGO_SIZE: f32 = 20.0;
+
+/// Pixel dimensions of the title bar logo image
 const TITLE_BAR_LOGO_PIXELS: u32 = 40;
+
+/// Corner radius for the title bar logo
 const TITLE_BAR_LOGO_RADIUS: f32 = 4.0;
+
+/// Right padding for the title bar logo
 const TITLE_BAR_LOGO_RIGHT_PADDING: f32 = 4.0;
+
 const LOGO_BYTES: &[u8] = include_bytes!("../../assets/logo.png");
+
 const WINDOW_ICON_SIZE: u32 = 256;
 
 #[derive(Debug, Clone)]
@@ -62,8 +94,8 @@ pub enum WindowMessage {
 
 pub fn settings() -> Settings {
     Settings {
-        size: Size::new(1380.0, 720.0),
-        min_size: Some(Size::new(960.0, 640.0)),
+        size: Size::new(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT),
+        min_size: Some(Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)),
         resizable: true,
         decorations: false,
         transparent: true,
@@ -74,24 +106,24 @@ pub fn settings() -> Settings {
 }
 
 fn window_icon() -> Option<window::Icon> {
-    let logo = ::image::load_from_memory(LOGO_BYTES).ok()?.resize_exact(
-        WINDOW_ICON_SIZE,
-        WINDOW_ICON_SIZE,
-        ::image::imageops::FilterType::Lanczos3,
-    );
-    let logo = logo.into_rgba8();
+    let logo = ::image::load_from_memory(LOGO_BYTES)
+        .ok()?
+        .resize_exact(WINDOW_ICON_SIZE, WINDOW_ICON_SIZE, Lanczos3)
+        .into_rgba8();
     let (width, height) = logo.dimensions();
 
     icon::from_rgba(logo.into_raw(), width, height).ok()
 }
 
 fn title_bar_logo() -> Option<image::Handle> {
-    let logo = ::image::load_from_memory(LOGO_BYTES).ok()?.resize_exact(
-        TITLE_BAR_LOGO_PIXELS,
-        TITLE_BAR_LOGO_PIXELS,
-        ::image::imageops::FilterType::Lanczos3,
-    );
-    let logo = logo.into_rgba8();
+    let logo = ::image::load_from_memory(LOGO_BYTES)
+        .ok()?
+        .resize_exact(
+            TITLE_BAR_LOGO_PIXELS,
+            TITLE_BAR_LOGO_PIXELS,
+            ::image::imageops::FilterType::Lanczos3,
+        )
+        .into_rgba8();
 
     Some(image::Handle::from_rgba(
         TITLE_BAR_LOGO_PIXELS,
@@ -102,7 +134,7 @@ fn title_bar_logo() -> Option<image::Handle> {
 
 pub fn subscription() -> Subscription<WindowMessage> {
     let close_requests = window::close_requests().map(|_| WindowMessage::CloseRequested);
-    let window_events = event::listen_with(|event, _status, _window| match event {
+    let window_events = event::listen_with(|event, _, _| match event {
         Event::Window(window::Event::Focused) => Some(WindowMessage::Focused),
         Event::Window(window::Event::Unfocused) => Some(WindowMessage::Unfocused),
         Event::Window(window::Event::Opened { .. } | window::Event::Resized(_)) => {
@@ -117,7 +149,7 @@ pub fn subscription() -> Subscription<WindowMessage> {
 pub fn update(
     state: &mut WindowState,
     msg: WindowMessage,
-    can_hide_in_background: bool,
+    is_background: bool,
 ) -> Task<WindowMessage> {
     match msg {
         WindowMessage::Drag => with_latest(window::drag),
@@ -127,8 +159,8 @@ pub fn update(
         WindowMessage::Minimize => with_latest(|id| window::minimize(id, true)),
         WindowMessage::ToggleMaximize => with_latest(window::toggle_maximize),
         WindowMessage::CloseRequested => {
-            state.backgrounded = can_hide_in_background;
-            if can_hide_in_background {
+            state.backgrounded = is_background;
+            if is_background {
                 with_latest(|id| window::set_mode(id, Mode::Hidden))
             } else {
                 iced::exit()
@@ -153,7 +185,7 @@ pub fn view<'a, AppMessage: Clone + 'a>(
     state: &'a WindowState,
     brand_width: f32,
     tab_bar: Option<Element<'a, AppMessage>>,
-    map_message: fn(WindowMessage) -> AppMessage,
+    map_msg: fn(WindowMessage) -> AppMessage,
 ) -> Element<'a, AppMessage> {
     let rounded = state.uses_rounded_corners();
     let logo: Element<'_, AppMessage> = match &state.logo {
@@ -174,15 +206,15 @@ pub fn view<'a, AppMessage: Clone + 'a>(
             right: TITLE_BAR_LOGO_RIGHT_PADDING,
             ..Padding::ZERO
         });
-    let brand = drag_region(brand, map_message);
-    let remaining_space = drag_region(
+    let brand = drag_region(brand, map_msg);
+    let space = drag_region(
         Space::new().width(Fill).height(Fixed(TITLE_BAR_HEIGHT)),
-        map_message,
+        map_msg,
     );
-    let controls = widget::container(controls().map(map_message))
+    let controls = widget::container(controls().map(map_msg))
         .height(Fill)
         .padding(Padding {
-            right: 6.0,
+            right: TITLE_BAR_RIGHT_PADDING,
             ..Padding::ZERO
         })
         .align_y(Vertical::Center);
@@ -190,25 +222,13 @@ pub fn view<'a, AppMessage: Clone + 'a>(
     if let Some(tab_bar) = tab_bar {
         content = content.push(tab_bar);
     }
-    let content = content
-        .push(remaining_space)
-        .push(controls)
-        .align_y(Vertical::Center);
+    let content = content.push(space).push(controls).align_y(Vertical::Center);
 
     widget::container(content)
         .width(Fill)
         .height(TITLE_BAR_HEIGHT)
         .style(move |theme| bar_style(theme, rounded))
         .into()
-}
-
-fn drag_region<'a, AppMessage: Clone + 'a>(
-    content: impl Into<Element<'a, AppMessage>>,
-    map_message: fn(WindowMessage) -> AppMessage,
-) -> MouseArea<'a, AppMessage> {
-    mouse_area(content)
-        .on_press(map_message(WindowMessage::Drag))
-        .on_double_click(map_message(WindowMessage::ToggleMaximize))
 }
 
 pub fn resize_handles() -> Element<'static, WindowMessage> {
@@ -273,6 +293,15 @@ pub fn show(state: &mut WindowState) -> Task<WindowMessage> {
     })
 }
 
+fn drag_region<'a, AppMessage: Clone + 'a>(
+    content: impl Into<Element<'a, AppMessage>>,
+    map_msg: fn(WindowMessage) -> AppMessage,
+) -> MouseArea<'a, AppMessage> {
+    mouse_area(content)
+        .on_press(map_msg(WindowMessage::Drag))
+        .on_double_click(map_msg(WindowMessage::ToggleMaximize))
+}
+
 fn handle(
     direction: Direction,
     interaction: mouse::Interaction,
@@ -290,7 +319,7 @@ fn controls() -> Element<'static, WindowMessage> {
         window_control(WindowControlKind::Close, WindowMessage::CloseRequested,),
     ]
     .align_y(Vertical::Center)
-    .spacing(0)
+    .spacing(WINDOW_CONTROL_SPACING)
     .into()
 }
 
@@ -314,10 +343,8 @@ fn bar_style(theme: &Theme, rounded: bool) -> Style {
         })
 }
 
-fn with_latest(
-    operation: impl Fn(Id) -> Task<WindowMessage> + Send + 'static,
-) -> Task<WindowMessage> {
-    window::latest().and_then(operation)
+fn with_latest(op: impl Fn(Id) -> Task<WindowMessage> + Send + 'static) -> Task<WindowMessage> {
+    window::latest().and_then(op)
 }
 
 #[cfg(test)]
