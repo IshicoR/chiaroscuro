@@ -17,12 +17,13 @@ provides a desktop dashboard for live vehicle, session, lap, and tyre telemetry.
 
 ## Project Scope
 
-Chiaroscuro intentionally supports **iRacing only**. Supporting Assetto Corsa,
-Assetto Corsa Competizione, Assetto Corsa EVO, GT7, or other simulators is out
-of scope. New protocol, telemetry, UI, and data-model work should be designed
-around the iRacing SDK instead of introducing multi-simulator abstractions.
+Chiaroscuro currently supports **iRacing only**. Support for Assetto Corsa,
+Assetto Corsa Competizione, Assetto Corsa EVO, GT7, or other simulators may be
+considered in the future, but is not part of the current scope. Until then,
+new protocol, telemetry, UI, and data-model work should be designed around the
+iRacing SDK instead of introducing speculative multi-simulator abstractions.
 
-The desktop links the `chiaro-irsdk` crate directly and reads iRacing's
+The desktop links the `chiaro_irsdk` crate directly and reads iRacing's
 shared-memory telemetry in a background subscription. No relay process or UDP
 transport is required.
 
@@ -41,7 +42,9 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 ## Implementation Status
 
 The desktop shell and telemetry dashboard are under active development. Live
-iRacing SDK telemetry is available through the in-process shared-memory client.
+iRacing SDK telemetry is available on Windows through the in-process
+shared-memory client. IBT recordings remain available without a live iRacing
+connection.
 
 ## License
 

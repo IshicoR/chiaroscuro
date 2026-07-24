@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem in Chiaroscuro.
+title: "[Bug]: "
+labels: [bug, "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please do not include sensitive data, such as private telemetry files, in this report.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+      placeholder: The dashboard stops updating after ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest set of steps that consistently reproduces the issue.
+      placeholder: |
+        1. Start iRacing
+        2. Launch Chiaroscuro
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the Chiaroscuro version or commit, Windows version, and iRacing version when relevant.
+      placeholder: |
+        Chiaroscuro version/commit:
+        Windows version:
+        iRacing version:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or recordings
+      description: Attach any relevant output or visuals. Remove or redact personal information first.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed or redacted any sensitive information.
+          required: true
