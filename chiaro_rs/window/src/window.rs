@@ -1,5 +1,5 @@
 use ::image::imageops::FilterType::Lanczos3;
-use chiaro_widgets::{WindowControlKind, tabs::BAR_HEIGHT as TITLE_BAR_HEIGHT, window_control};
+use chiaro_widgets::{WindowControlKind, window_control};
 use iced::{
     Background, Border, Element, Event,
     Length::{self, Fill, Fixed},
@@ -36,17 +36,17 @@ const RESIZE_HANDLE_SIZE: f32 = 6.0;
 /// Right padding for the title bar area
 const TITLE_BAR_RIGHT_PADDING: f32 = 6.0;
 
+/// Height of the application title bar
+const TITLE_BAR_HEIGHT: f32 = 40.0;
+
 /// Display size of the title bar logo in pixels
-const TITLE_BAR_LOGO_SIZE: f32 = 20.0;
+const TITLE_BAR_LOGO_SIZE: f32 = 24.0;
 
 /// Pixel dimensions of the title bar logo image
 const TITLE_BAR_LOGO_PIXELS: u32 = 40;
 
 /// Corner radius for the title bar logo
-const TITLE_BAR_LOGO_RADIUS: f32 = 4.0;
-
-/// Right padding for the title bar logo
-const TITLE_BAR_LOGO_RIGHT_PADDING: f32 = 4.0;
+const TITLE_BAR_LOGO_RADIUS: f32 = 5.0;
 
 const LOGO_BYTES: &[u8] = include_bytes!("../../assets/logo.png");
 
@@ -184,7 +184,6 @@ pub fn update(
 pub fn view<'a, AppMessage: Clone + 'a>(
     state: &'a WindowState,
     brand_width: f32,
-    tab_bar: Option<Element<'a, AppMessage>>,
     map_msg: fn(WindowMessage) -> AppMessage,
 ) -> Element<'a, AppMessage> {
     let rounded = state.uses_rounded_corners();
@@ -201,11 +200,7 @@ pub fn view<'a, AppMessage: Clone + 'a>(
     };
     let brand = widget::container(logo)
         .center_x(Fixed(brand_width))
-        .center_y(Fixed(TITLE_BAR_HEIGHT))
-        .padding(Padding {
-            right: TITLE_BAR_LOGO_RIGHT_PADDING,
-            ..Padding::ZERO
-        });
+        .center_y(Fixed(TITLE_BAR_HEIGHT));
     let brand = drag_region(brand, map_msg);
     let space = drag_region(
         Space::new().width(Fill).height(Fixed(TITLE_BAR_HEIGHT)),
@@ -218,11 +213,7 @@ pub fn view<'a, AppMessage: Clone + 'a>(
             ..Padding::ZERO
         })
         .align_y(Vertical::Center);
-    let mut content = row![brand];
-    if let Some(tab_bar) = tab_bar {
-        content = content.push(tab_bar);
-    }
-    let content = content.push(space).push(controls).align_y(Vertical::Center);
+    let content = row![brand, space, controls].align_y(Vertical::Center);
 
     widget::container(content)
         .width(Fill)

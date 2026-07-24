@@ -1,18 +1,14 @@
-use iced::{
-    Font,
-    font::{Family, Weight},
-};
+use iced::{Font, font::Weight};
 
-pub const SANS: Font = Font::with_name("Segoe UI");
+/// IBM Plex Sans JP Regular, bundled with the application.
+pub const SANS: Font = Font::with_name("IBM Plex Sans JP");
 pub const SANS_SEMIBOLD: Font = Font {
     weight: Weight::Semibold,
     ..SANS
 };
-pub const MONO_SEMIBOLD: Font = Font {
-    family: Family::Name("Cascadia Mono"),
-    weight: Weight::Semibold,
-    ..Font::DEFAULT
-};
+/// IBM Plex Mono Regular, bundled with the application.
+pub const MONO: Font = Font::with_name("IBM Plex Mono");
 
-pub const SANS_JP_REGULAR_BYTES: &[u8] =
-    include_bytes!("../assets/fonts/IBMPlexSansJP-Regular.ttf");
+pub const SANS_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/IBMPlexSansJP-Regular.ttf");
+pub const SANS_SEMIBOLD_BYTES: &[u8] = include_bytes!("../assets/fonts/IBMPlexSansJP-SemiBold.ttf");
+pub const MONO_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf");

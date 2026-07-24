@@ -1,0 +1,23 @@
+[package]
+name = "chiaro_car_setup_ui"
+description = "Car setup screen state, update logic, and Iced view for Chiaro."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/car_setup_ui.rs"
+
+[dependencies]
+chiaro_irsdk = { workspace = true }
+chiaro_telemetry = { workspace = true }
+chiaro_widgets = { workspace = true }
+iced = { workspace = true }
+iced_fonts = { workspace = true }
+serde_yaml_ng = { workspace = true }

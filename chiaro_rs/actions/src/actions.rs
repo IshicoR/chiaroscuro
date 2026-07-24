@@ -1,14 +1,16 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Screen {
     #[default]
-    Dashboard,
+    Telemetry,
+    CarSetup,
     Settings,
 }
 
 impl Screen {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Dashboard => "Dashboard",
+            Self::Telemetry => "Telemetry",
+            Self::CarSetup => "Car setup",
             Self::Settings => "Settings",
         }
     }

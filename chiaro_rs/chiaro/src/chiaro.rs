@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 
 use chiaro_actions::{Action, Screen};
-use chiaro_config::{DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig};
-use chiaro_dashboard_ui::{
-    self as dashboard, DashboardLayout, DashboardLayoutFlag, DashboardMessage, DashboardState,
+use chiaro_car_setup_ui::{
+    self as car_setup, CarSetupLayout, CarSetupLayoutFlag, CarSetupMessage, CarSetupState,
 };
+use chiaro_config::{DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig};
 use chiaro_ibt_picker as ibt;
-use chiaro_live_telemetry::{self as telemetry, LiveTelemetryMessage, LiveTelemetrySource};
+use chiaro_live_telemetry::{self as live_telemetry, LiveTelemetryMessage, LiveTelemetrySource};
 use chiaro_navigation_ui::{self as navigation, Navigation};
 use chiaro_settings_ui::{self as settings, SettingsMessage, SettingsState};
 use chiaro_telemetry::{LoadedIbt, RecordingSource, Session};
+use chiaro_telemetry_ui::{
+    self as telemetry_ui, TelemetryLayout, TelemetryLayoutFlag, TelemetryMessage, TelemetryState,
+};
 use chiaro_tray::{self as tray, TrayMessage};
 use chiaro_widgets::{surface, typography};
 use chiaro_window::{self as window, WindowMessage, WindowState};
@@ -23,7 +26,6 @@ use iced::{
 use iced_fonts::LUCIDE_FONT_BYTES;
 
 #[global_allocator]
-#[cfg(target_os = "windows")]
 static ALLOC: rpmalloc::RpMalloc = rpmalloc::RpMalloc;
 
 const CONTENT_PADDING: f32 = 24.0;
@@ -47,7 +49,8 @@ struct Chiaroscuro {
     session: Session,
     reference_session: Option<Session>,
     window: WindowState,
-    dashboard: DashboardState,
+    telemetry: TelemetryState,
+    car_setup: CarSetupState,
     settings: SettingsState,
     tray: tray::TrayState,
     live_telemetry_source: LiveTelemetrySource,
@@ -59,9 +62,10 @@ struct Chiaroscuro {
 enum AppMessage {
     Navigation(navigation::NavigationMessage),
     Window(WindowMessage),
-    Dashboard(DashboardMessage),
+    Telemetry(TelemetryMessage),
+    CarSetup(CarSetupMessage),
     Settings(SettingsMessage),
-    Telemetry(LiveTelemetryMessage),
+    LiveTelemetry(LiveTelemetryMessage),
     Tray(TrayMessage),
     IbtSelected(Option<RecordingSource>),
     IbtLoaded(Result<LoadedIbt, String>),
@@ -83,8 +87,10 @@ impl Chiaroscuro {
             .style(|_, app_theme| surface::application(app_theme))
             .subscription(Chiaroscuro::subscription)
             .font(LUCIDE_FONT_BYTES)
-            .font(typography::SANS_JP_REGULAR_BYTES)
-            .default_font(typography::SANS_SEMIBOLD)
+            .font(typography::SANS_REGULAR_BYTES)
+            .font(typography::SANS_SEMIBOLD_BYTES)
+            .font(typography::MONO_REGULAR_BYTES)
+            .default_font(typography::SANS)
             .window(window::settings())
             .antialiasing(true)
             .centered()
@@ -104,9 +110,16 @@ impl Chiaroscuro {
                 if let Some(layout) = config
                     .dashboard
                     .as_ref()
-                    .and_then(dashboard_layout_from_config)
+                    .and_then(telemetry_layout_from_config)
                 {
-                    app.dashboard.apply_layout(&layout);
+                    app.telemetry.apply_layout(&layout);
+                }
+                if let Some(layout) = config
+                    .dashboard
+                    .as_ref()
+                    .and_then(car_setup_layout_from_config)
+                {
+                    app.car_setup.apply_layout(&layout);
                 }
                 app.configuration = config;
             },
@@ -129,9 +142,19 @@ impl Chiaroscuro {
     fn subscription(&self) -> Subscription<AppMessage> {
         let wants_connection = self.session.wants_connection();
         let live_source_available = self.live_telemetry_source.info().is_available();
-        let dashboard_active = self.dashboard_is_foreground();
-        let telemetry = if wants_connection && live_source_available {
-            telemetry::subscription(&self.live_telemetry_source).map(AppMessage::Telemetry)
+        let window_is_backgrounded = self.window.is_backgrounded();
+        let telemetry_active = screen_is_foreground(
+            self.navigation.current(),
+            Screen::Telemetry,
+            window_is_backgrounded,
+        );
+        let car_setup_active = screen_is_foreground(
+            self.navigation.current(),
+            Screen::CarSetup,
+            window_is_backgrounded,
+        );
+        let live_telemetry = if wants_connection && live_source_available {
+            live_telemetry::subscription(&self.live_telemetry_source).map(AppMessage::LiveTelemetry)
         } else {
             Subscription::none()
         };
@@ -154,8 +177,10 @@ impl Chiaroscuro {
         Subscription::batch([
             window::subscription().map(AppMessage::Window),
             tray::subscription(&self.tray).map(AppMessage::Tray),
-            dashboard::subscription(&self.dashboard, dashboard_active).map(AppMessage::Dashboard),
-            telemetry,
+            telemetry_ui::subscription(&self.telemetry, telemetry_active)
+                .map(AppMessage::Telemetry),
+            car_setup::subscription(&self.car_setup, car_setup_active).map(AppMessage::CarSetup),
+            live_telemetry,
             focus_navigation,
         ])
     }
@@ -168,10 +193,18 @@ impl Chiaroscuro {
                 self.handle_action(action)
             },
             AppMessage::Window(message) => {
-                window::update(&mut self.window, message, self.tray.is_available())
-                    .map(AppMessage::Window)
+                let was_backgrounded = self.window.is_backgrounded();
+                let task = window::update(&mut self.window, message, self.tray.is_available());
+                if window_became_foreground(was_backgrounded, self.window.is_backgrounded()) {
+                    self.refresh_workspace();
+                }
+                task.map(AppMessage::Window)
             },
-            AppMessage::Dashboard(message) => self.update_dashboard(message),
+            AppMessage::Telemetry(message) => self.update_telemetry(message),
+            AppMessage::CarSetup(message) => {
+                self.update_car_setup(message);
+                Task::none()
+            },
             AppMessage::Settings(message) => {
                 let persists_configuration = message.persists_configuration();
                 let action = settings::update(&mut self.settings, message);
@@ -184,12 +217,14 @@ impl Chiaroscuro {
 
                 action
             },
-            AppMessage::Telemetry(event) => {
-                let refreshes_dashboard = telemetry_refreshes_dashboard(&event);
+            AppMessage::LiveTelemetry(event) => {
+                let refreshes_workspace = telemetry_refreshes_workspace(&event);
                 match event {
-                    telemetry::LiveTelemetryMessage::Waiting => self.session.mark_waiting(),
-                    telemetry::LiveTelemetryMessage::Connected => self.session.mark_connected(),
-                    telemetry::LiveTelemetryMessage::Batch(batch) => {
+                    live_telemetry::LiveTelemetryMessage::Waiting => self.session.mark_waiting(),
+                    live_telemetry::LiveTelemetryMessage::Connected => {
+                        self.session.mark_connected();
+                    },
+                    live_telemetry::LiveTelemetryMessage::Batch(batch) => {
                         self.session.record_live_batch(
                             batch
                                 .samples
@@ -200,37 +235,46 @@ impl Chiaroscuro {
                             batch.session_info,
                         );
                     },
-                    telemetry::LiveTelemetryMessage::Snapshot {
+                    live_telemetry::LiveTelemetryMessage::Snapshot {
                         snapshot,
                         session_info,
                     } => self.session.record_snapshot(snapshot, session_info),
-                    telemetry::LiveTelemetryMessage::Error(error) => self.session.mark_error(error),
+                    live_telemetry::LiveTelemetryMessage::Error(error) => {
+                        self.session.mark_error(error);
+                    },
                 }
-                if refreshes_dashboard && self.dashboard_is_foreground() {
-                    self.update_dashboard(DashboardMessage::Refresh)
-                } else {
-                    Task::none()
+                if refreshes_workspace && self.workspace_is_foreground() {
+                    self.refresh_workspace();
                 }
+                Task::none()
             },
             AppMessage::IbtSelected(path) => {
                 let Some(path) = path else {
-                    self.dashboard.finish_ibt_load();
+                    self.telemetry.finish_ibt_load();
                     return Task::none();
                 };
 
-                self.dashboard.begin_ibt_load();
+                self.telemetry.begin_ibt_load();
                 self.session.begin_ibt_load();
                 Task::perform(ibt::load(path), AppMessage::IbtLoaded)
             },
             AppMessage::IbtLoaded(result) => {
-                self.dashboard.finish_ibt_load();
+                self.telemetry.finish_ibt_load();
                 match result {
                     Ok(recording) => {
                         self.session.load_ibt(recording);
-                        dashboard::reset_telemetry(
-                            &mut self.dashboard,
+                        let telemetry_active = self.telemetry_is_active();
+                        let car_setup_active = self.car_setup_is_active();
+                        telemetry_ui::reset_session(
+                            &mut self.telemetry,
                             &self.session,
                             self.reference_session.as_ref(),
+                            telemetry_active,
+                        );
+                        car_setup::reset_session(
+                            &mut self.car_setup,
+                            &self.session,
+                            car_setup_active,
                         );
                     },
                     Err(error) => self.session.mark_ibt_error(error),
@@ -239,27 +283,29 @@ impl Chiaroscuro {
             },
             AppMessage::ReferenceIbtSelected(path) => {
                 let Some(path) = path else {
-                    self.dashboard.finish_reference_ibt_load();
+                    self.telemetry.finish_reference_ibt_load();
                     return Task::none();
                 };
 
-                self.dashboard.begin_reference_ibt_load();
+                self.telemetry.begin_reference_ibt_load();
                 Task::perform(ibt::load(path), AppMessage::ReferenceIbtLoaded)
             },
             AppMessage::ReferenceIbtLoaded(result) => {
-                self.dashboard.finish_reference_ibt_load();
+                self.telemetry.finish_reference_ibt_load();
                 match result {
                     Ok(recording) => {
                         let mut reference = Session::default();
                         reference.load_ibt(recording);
                         self.reference_session = Some(reference);
-                        dashboard::reset_reference_telemetry(
-                            &mut self.dashboard,
+                        let telemetry_active = self.telemetry_is_active();
+                        telemetry_ui::reset_reference(
+                            &mut self.telemetry,
                             &self.session,
                             self.reference_session.as_ref(),
+                            telemetry_active,
                         );
                     },
-                    Err(error) => self.dashboard.mark_reference_ibt_error(error),
+                    Err(error) => self.telemetry.mark_reference_ibt_error(error),
                 }
                 Task::none()
             },
@@ -275,20 +321,20 @@ impl Chiaroscuro {
     fn view(&self) -> Element<'_, AppMessage> {
         let rounded = self.window.uses_rounded_corners();
         let current_screen = self.navigation.current();
-        let title_bar_tabs = match current_screen {
-            Screen::Dashboard => {
-                Some(dashboard::tab_bar(&self.dashboard).map(AppMessage::Dashboard))
-            },
-            Screen::Settings => None,
-        };
         let screen = match current_screen {
-            Screen::Dashboard => dashboard::view(
-                &self.dashboard,
+            Screen::Telemetry => telemetry_ui::view(
+                &self.telemetry,
                 &self.session,
                 self.reference_session.as_ref(),
                 self.live_telemetry_source.info(),
             )
-            .map(AppMessage::Dashboard),
+            .map(AppMessage::Telemetry),
+            Screen::CarSetup => car_setup::view(
+                &self.car_setup,
+                &self.session,
+                self.live_telemetry_source.info(),
+            )
+            .map(AppMessage::CarSetup),
             Screen::Settings => settings::view(
                 &self.settings,
                 &self.session,
@@ -312,12 +358,7 @@ impl Chiaroscuro {
             .style(move |theme| surface::workspace(theme, rounded));
 
         let layout = column![
-            window::view(
-                &self.window,
-                navigation_width,
-                title_bar_tabs,
-                AppMessage::Window,
-            ),
+            window::view(&self.window, navigation_width, AppMessage::Window),
             workspace,
         ]
         .width(Fill)
@@ -331,7 +372,7 @@ impl Chiaroscuro {
         .height(Fill);
 
         match current_screen {
-            Screen::Dashboard => layout.into(),
+            Screen::Telemetry | Screen::CarSetup => layout.into(),
             Screen::Settings => {
                 settings::with_dialog_preview(layout, &self.settings, AppMessage::Settings)
             },
@@ -344,30 +385,23 @@ impl Chiaroscuro {
         };
 
         match action {
-            Action::Navigate(page) => {
-                let entering_dashboard =
-                    page == Screen::Dashboard && self.navigation.current() != Screen::Dashboard;
-                self.navigation.navigate(page);
-                if entering_dashboard {
-                    self.update_dashboard(DashboardMessage::Refresh)
-                } else {
-                    Task::none()
-                }
-            },
+            Action::Navigate(page) => self.navigate_to(page),
             Action::OpenIbt => {
-                self.dashboard.begin_ibt_selection();
+                self.telemetry.begin_ibt_selection();
                 Task::perform(ibt::select_file(), AppMessage::IbtSelected)
             },
             Action::OpenReferenceIbt => {
-                self.dashboard.begin_reference_ibt_selection();
+                self.telemetry.begin_reference_ibt_selection();
                 Task::perform(ibt::select_file(), AppMessage::ReferenceIbtSelected)
             },
             Action::ClearReferenceIbt => {
                 self.reference_session = None;
-                dashboard::reset_reference_telemetry(
-                    &mut self.dashboard,
+                let telemetry_active = self.telemetry_is_active();
+                telemetry_ui::reset_reference(
+                    &mut self.telemetry,
                     &self.session,
                     self.reference_session.as_ref(),
+                    telemetry_active,
                 );
                 Task::none()
             },
@@ -376,16 +410,53 @@ impl Chiaroscuro {
                     return Task::none();
                 }
                 self.session.set_connection_requested(connected);
-                dashboard::reset_telemetry(
-                    &mut self.dashboard,
+                let telemetry_active = self.telemetry_is_active();
+                let car_setup_active = self.car_setup_is_active();
+                telemetry_ui::reset_session(
+                    &mut self.telemetry,
                     &self.session,
                     self.reference_session.as_ref(),
+                    telemetry_active,
                 );
+                car_setup::reset_session(&mut self.car_setup, &self.session, car_setup_active);
                 Task::none()
             },
-            Action::ShowWindow => window::show(&mut self.window).map(AppMessage::Window),
+            Action::ShowWindow => {
+                let was_backgrounded = self.window.is_backgrounded();
+                let task = window::show(&mut self.window);
+                if window_became_foreground(was_backgrounded, self.window.is_backgrounded()) {
+                    self.refresh_workspace();
+                }
+                task.map(AppMessage::Window)
+            },
             Action::ExitApplication => iced::exit(),
         }
+    }
+
+    fn navigate_to(&mut self, screen: Screen) -> Task<AppMessage> {
+        let current = self.navigation.current();
+        if screen == current {
+            return Task::none();
+        }
+
+        match current {
+            Screen::Telemetry => telemetry_ui::deactivate(&mut self.telemetry),
+            Screen::CarSetup => car_setup::deactivate(&mut self.car_setup),
+            Screen::Settings => {},
+        }
+        self.navigation.navigate(screen);
+        match screen {
+            Screen::Telemetry => telemetry_ui::activate(
+                &mut self.telemetry,
+                &self.session,
+                self.reference_session.as_ref(),
+            ),
+            Screen::CarSetup => {
+                car_setup::activate(&mut self.car_setup, &self.session);
+            },
+            Screen::Settings => {},
+        }
+        Task::none()
     }
 
     fn save_configuration(&mut self) {
@@ -396,108 +467,223 @@ impl Chiaroscuro {
             .map(|error| format!("failed to save desktop settings: {error}"));
     }
 
-    fn dashboard_is_foreground(&self) -> bool {
-        dashboard_is_foreground(self.navigation.current(), self.window.is_backgrounded())
+    fn telemetry_is_active(&self) -> bool {
+        self.navigation.current() == Screen::Telemetry
     }
 
-    fn update_dashboard(&mut self, message: DashboardMessage) -> Task<AppMessage> {
-        let layout_revision = self.dashboard.layout_revision();
+    fn car_setup_is_active(&self) -> bool {
+        self.navigation.current() == Screen::CarSetup
+    }
+
+    fn workspace_is_foreground(&self) -> bool {
+        workspace_is_foreground(self.navigation.current(), self.window.is_backgrounded())
+    }
+
+    fn refresh_workspace(&mut self) {
+        match self.navigation.current() {
+            Screen::Telemetry => telemetry_ui::refresh(
+                &mut self.telemetry,
+                &self.session,
+                self.reference_session.as_ref(),
+            ),
+            Screen::CarSetup => car_setup::refresh(&mut self.car_setup, &self.session),
+            Screen::Settings => {},
+        }
+    }
+
+    fn update_telemetry(&mut self, message: TelemetryMessage) -> Task<AppMessage> {
+        let layout_revision = self.telemetry.layout_revision();
         let resets_layout = message.resets_layout();
-        let action = dashboard::update(
-            &mut self.dashboard,
+        let action = telemetry_ui::update(
+            &mut self.telemetry,
             &self.session,
             self.reference_session.as_ref(),
             message,
         );
 
-        let changed_layout = (self.dashboard.layout_revision() != layout_revision)
-            .then(|| self.dashboard.layout_snapshot());
-        if update_persisted_dashboard_layout(&mut self.configuration, resets_layout, changed_layout)
+        let changed_layout = (self.telemetry.layout_revision() != layout_revision)
+            .then(|| self.telemetry.layout_snapshot());
+        if update_persisted_telemetry_layout(&mut self.configuration, resets_layout, changed_layout)
         {
             self.save_configuration();
         }
 
         self.handle_action(action)
     }
-}
 
-fn dashboard_layout_from_config(config: &DashboardLayoutConfig) -> Option<DashboardLayout> {
-    (config.schema_version == DASHBOARD_LAYOUT_SCHEMA_VERSION).then(|| DashboardLayout {
-        chart_order: config.chart_order.clone(),
-        chart_visibility: layout_flags_from_config(&config.chart_visibility),
-        chart_collapsed: layout_flags_from_config(&config.chart_collapsed),
-        chart_columns: config.chart_columns,
-        setup_card_order: config.setup_card_order.clone(),
-        setup_card_collapsed: layout_flags_from_config(&config.setup_card_collapsed),
-        lap_analysis_order: config.lap_analysis_order.clone(),
-        lap_analysis_collapsed: layout_flags_from_config(&config.lap_analysis_collapsed),
-        car_setup_card_order: config.car_setup_card_order.clone(),
-        car_setup_card_collapsed: layout_flags_from_config(&config.car_setup_card_collapsed),
-    })
-}
+    fn update_car_setup(&mut self, message: CarSetupMessage) {
+        let layout_revision = self.car_setup.layout_revision();
+        let resets_layout = message.resets_layout();
+        car_setup::update(&mut self.car_setup, message);
 
-fn dashboard_layout_to_config(layout: DashboardLayout) -> DashboardLayoutConfig {
-    DashboardLayoutConfig {
-        schema_version: DASHBOARD_LAYOUT_SCHEMA_VERSION,
-        chart_order: layout.chart_order,
-        chart_visibility: layout_flags_to_config(layout.chart_visibility),
-        chart_collapsed: layout_flags_to_config(layout.chart_collapsed),
-        chart_columns: layout.chart_columns,
-        setup_card_order: layout.setup_card_order,
-        setup_card_collapsed: layout_flags_to_config(layout.setup_card_collapsed),
-        lap_analysis_order: layout.lap_analysis_order,
-        lap_analysis_collapsed: layout_flags_to_config(layout.lap_analysis_collapsed),
-        car_setup_card_order: layout.car_setup_card_order,
-        car_setup_card_collapsed: layout_flags_to_config(layout.car_setup_card_collapsed),
+        let changed_layout = (self.car_setup.layout_revision() != layout_revision)
+            .then(|| self.car_setup.layout_snapshot());
+        if update_persisted_car_setup_layout(&mut self.configuration, resets_layout, changed_layout)
+        {
+            self.save_configuration();
+        }
     }
 }
 
-fn layout_flags_from_config(flags: &BTreeMap<String, bool>) -> Vec<DashboardLayoutFlag> {
+fn telemetry_layout_from_config(config: &DashboardLayoutConfig) -> Option<TelemetryLayout> {
+    (config.schema_version == DASHBOARD_LAYOUT_SCHEMA_VERSION).then(|| TelemetryLayout {
+        chart_order: config.chart_order.clone(),
+        chart_visibility: telemetry_flags_from_config(&config.chart_visibility),
+        chart_collapsed: telemetry_flags_from_config(&config.chart_collapsed),
+        chart_columns: config.chart_columns,
+        setup_card_order: config.setup_card_order.clone(),
+        setup_card_collapsed: telemetry_flags_from_config(&config.setup_card_collapsed),
+        lap_analysis_order: config.lap_analysis_order.clone(),
+        lap_analysis_collapsed: telemetry_flags_from_config(&config.lap_analysis_collapsed),
+    })
+}
+
+fn car_setup_layout_from_config(config: &DashboardLayoutConfig) -> Option<CarSetupLayout> {
+    (config.schema_version == DASHBOARD_LAYOUT_SCHEMA_VERSION).then(|| CarSetupLayout {
+        card_order: config.car_setup_card_order.clone(),
+        card_collapsed: config
+            .car_setup_card_collapsed
+            .iter()
+            .map(|(key, value)| CarSetupLayoutFlag {
+                key: key.clone(),
+                value: *value,
+            })
+            .collect(),
+    })
+}
+
+fn telemetry_flags_from_config(flags: &BTreeMap<String, bool>) -> Vec<TelemetryLayoutFlag> {
     flags
         .iter()
-        .map(|(key, value)| DashboardLayoutFlag {
+        .map(|(key, value)| TelemetryLayoutFlag {
             key: key.clone(),
             value: *value,
         })
         .collect()
 }
 
-fn layout_flags_to_config(flags: Vec<DashboardLayoutFlag>) -> BTreeMap<String, bool> {
+fn telemetry_flags_to_config(flags: Vec<TelemetryLayoutFlag>) -> BTreeMap<String, bool> {
     flags
         .into_iter()
         .map(|flag| (flag.key, flag.value))
         .collect()
 }
 
-fn update_persisted_dashboard_layout(
-    configuration: &mut DesktopConfig,
-    resets_layout: bool,
-    changed_layout: Option<DashboardLayout>,
-) -> bool {
-    if resets_layout {
-        let removed_override = configuration.dashboard.take().is_some();
-        return removed_override || changed_layout.is_some();
-    }
-    let Some(layout) = changed_layout else {
-        return false;
-    };
-
-    configuration.dashboard = Some(dashboard_layout_to_config(layout));
-    true
+fn apply_telemetry_layout(config: &mut DashboardLayoutConfig, layout: TelemetryLayout) {
+    config.chart_order = layout.chart_order;
+    config.chart_visibility = telemetry_flags_to_config(layout.chart_visibility);
+    config.chart_collapsed = telemetry_flags_to_config(layout.chart_collapsed);
+    config.chart_columns = layout.chart_columns;
+    config.setup_card_order = layout.setup_card_order;
+    config.setup_card_collapsed = telemetry_flags_to_config(layout.setup_card_collapsed);
+    config.lap_analysis_order = layout.lap_analysis_order;
+    config.lap_analysis_collapsed = telemetry_flags_to_config(layout.lap_analysis_collapsed);
 }
 
-fn dashboard_is_foreground(screen: Screen, window_is_backgrounded: bool) -> bool {
-    screen == Screen::Dashboard && !window_is_backgrounded
+fn apply_car_setup_layout(config: &mut DashboardLayoutConfig, layout: CarSetupLayout) {
+    config.car_setup_card_order = layout.card_order;
+    config.car_setup_card_collapsed = layout
+        .card_collapsed
+        .into_iter()
+        .map(|flag| (flag.key, flag.value))
+        .collect();
+}
+
+fn reset_telemetry_layout(config: &mut DashboardLayoutConfig) {
+    let defaults = DashboardLayoutConfig::default();
+    config.chart_order = defaults.chart_order;
+    config.chart_visibility = defaults.chart_visibility;
+    config.chart_collapsed = defaults.chart_collapsed;
+    config.chart_columns = defaults.chart_columns;
+    config.setup_card_order = defaults.setup_card_order;
+    config.setup_card_collapsed = defaults.setup_card_collapsed;
+    config.lap_analysis_order = defaults.lap_analysis_order;
+    config.lap_analysis_collapsed = defaults.lap_analysis_collapsed;
+}
+
+fn reset_car_setup_layout(config: &mut DashboardLayoutConfig) {
+    let defaults = DashboardLayoutConfig::default();
+    config.car_setup_card_order = defaults.car_setup_card_order;
+    config.car_setup_card_collapsed = defaults.car_setup_card_collapsed;
+}
+
+fn dashboard_config_for_update(configuration: &mut DesktopConfig) -> &mut DashboardLayoutConfig {
+    let uses_known_schema = configuration
+        .dashboard
+        .as_ref()
+        .is_none_or(|config| config.schema_version == DASHBOARD_LAYOUT_SCHEMA_VERSION);
+    if !uses_known_schema {
+        configuration.dashboard = None;
+    }
+    configuration
+        .dashboard
+        .get_or_insert_with(DashboardLayoutConfig::default)
+}
+
+fn remove_default_dashboard_config(configuration: &mut DesktopConfig) {
+    if configuration.dashboard.as_ref() == Some(&DashboardLayoutConfig::default()) {
+        configuration.dashboard = None;
+    }
+}
+
+fn update_persisted_telemetry_layout(
+    configuration: &mut DesktopConfig,
+    resets_layout: bool,
+    changed_layout: Option<TelemetryLayout>,
+) -> bool {
+    let changed = changed_layout.is_some();
+    let previous = configuration.dashboard.clone();
+    if resets_layout {
+        reset_telemetry_layout(dashboard_config_for_update(configuration));
+    } else if let Some(layout) = changed_layout {
+        apply_telemetry_layout(dashboard_config_for_update(configuration), layout);
+    } else {
+        return false;
+    }
+
+    remove_default_dashboard_config(configuration);
+    changed || configuration.dashboard != previous
+}
+
+fn update_persisted_car_setup_layout(
+    configuration: &mut DesktopConfig,
+    resets_layout: bool,
+    changed_layout: Option<CarSetupLayout>,
+) -> bool {
+    let changed = changed_layout.is_some();
+    let previous = configuration.dashboard.clone();
+    if resets_layout {
+        reset_car_setup_layout(dashboard_config_for_update(configuration));
+    } else if let Some(layout) = changed_layout {
+        apply_car_setup_layout(dashboard_config_for_update(configuration), layout);
+    } else {
+        return false;
+    }
+
+    remove_default_dashboard_config(configuration);
+    changed || configuration.dashboard != previous
+}
+
+fn workspace_is_foreground(screen: Screen, window_is_backgrounded: bool) -> bool {
+    matches!(screen, Screen::Telemetry | Screen::CarSetup) && !window_is_backgrounded
+}
+
+fn window_became_foreground(was_backgrounded: bool, is_backgrounded: bool) -> bool {
+    was_backgrounded && !is_backgrounded
+}
+
+fn screen_is_foreground(current: Screen, target: Screen, window_is_backgrounded: bool) -> bool {
+    current == target && !window_is_backgrounded
 }
 
 fn screen_content_padding(screen: Screen) -> f32 {
     match screen {
-        Screen::Dashboard => 0.0,
+        Screen::Telemetry | Screen::CarSetup => 0.0,
         Screen::Settings => CONTENT_PADDING,
     }
 }
 
-fn telemetry_refreshes_dashboard(event: &LiveTelemetryMessage) -> bool {
+fn telemetry_refreshes_workspace(event: &LiveTelemetryMessage) -> bool {
     matches!(
         event,
         LiveTelemetryMessage::Batch(_) | LiveTelemetryMessage::Snapshot { .. }
@@ -507,112 +693,195 @@ fn telemetry_refreshes_dashboard(event: &LiveTelemetryMessage) -> bool {
 #[cfg(test)]
 mod tests {
     use chiaro_actions::Screen;
-    use chiaro_config::DesktopConfig;
-    use chiaro_dashboard_ui::{DashboardLayout, DashboardLayoutFlag};
+    use chiaro_car_setup_ui::{CarSetupLayout, CarSetupLayoutFlag};
+    use chiaro_config::{DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig};
     use chiaro_live_telemetry::{LiveTelemetryBatch, LiveTelemetryMessage};
+    use chiaro_telemetry_ui::{TelemetryLayout, TelemetryState};
 
     use super::{
-        dashboard_is_foreground, dashboard_layout_from_config, dashboard_layout_to_config,
-        screen_content_padding, telemetry_refreshes_dashboard, update_persisted_dashboard_layout,
+        car_setup_layout_from_config, screen_content_padding, screen_is_foreground,
+        telemetry_layout_from_config, telemetry_refreshes_workspace,
+        update_persisted_car_setup_layout, update_persisted_telemetry_layout,
+        window_became_foreground, workspace_is_foreground,
     };
 
-    #[test]
-    fn dashboard_layout_survives_the_configuration_boundary() {
-        let layout = DashboardLayout {
-            car_setup_card_order: vec![
+    fn car_setup_layout() -> CarSetupLayout {
+        CarSetupLayout {
+            card_order: vec![
                 "summary".to_owned(),
                 "vehicle:specifications".to_owned(),
                 "setup:tires".to_owned(),
             ],
-            car_setup_card_collapsed: vec![DashboardLayoutFlag {
+            card_collapsed: vec![CarSetupLayoutFlag {
                 key: "setup:tires".to_owned(),
                 value: true,
             }],
-            ..DashboardLayout::default()
+        }
+    }
+
+    fn assert_telemetry_layout_equivalent(
+        actual: Option<TelemetryLayout>,
+        expected: &TelemetryLayout,
+    ) {
+        let mut state = TelemetryState::default();
+        state.apply_layout(&actual.expect("known Telemetry layout"));
+        assert_eq!(&state.layout_snapshot(), expected);
+    }
+
+    #[test]
+    fn legacy_dashboard_config_restores_both_screen_layouts() {
+        let telemetry = TelemetryLayout {
+            chart_columns: 2,
+            ..TelemetryLayout::default()
         };
-        let config = dashboard_layout_to_config(layout.clone());
-        let restored = dashboard_layout_from_config(&config).expect("known layout schema");
-
-        assert_eq!(restored.car_setup_card_order, layout.car_setup_card_order);
-        assert_eq!(
-            restored.car_setup_card_collapsed,
-            layout.car_setup_card_collapsed
-        );
-        assert_eq!(dashboard_layout_to_config(restored), config);
-    }
-
-    #[test]
-    fn ignores_dashboard_layouts_from_an_unknown_schema() {
-        let mut config = dashboard_layout_to_config(DashboardLayout::default());
-        config.schema_version += 1;
-
-        assert_eq!(dashboard_layout_from_config(&config), None);
-    }
-
-    #[test]
-    fn dashboard_configuration_is_written_only_for_real_layout_changes() {
+        let car_setup = car_setup_layout();
         let mut configuration = DesktopConfig::default();
 
-        assert!(!update_persisted_dashboard_layout(
+        assert!(update_persisted_telemetry_layout(
             &mut configuration,
             false,
-            None,
+            Some(telemetry.clone()),
         ));
-        assert_eq!(configuration.dashboard, None);
+        assert!(update_persisted_car_setup_layout(
+            &mut configuration,
+            false,
+            Some(car_setup.clone()),
+        ));
 
-        assert!(update_persisted_dashboard_layout(
-            &mut configuration,
-            false,
-            Some(DashboardLayout::default()),
-        ));
-        assert!(configuration.dashboard.is_some());
+        let persisted = configuration.dashboard.as_ref().unwrap();
+        assert_telemetry_layout_equivalent(telemetry_layout_from_config(persisted), &telemetry);
+        assert_eq!(car_setup_layout_from_config(persisted), Some(car_setup));
     }
 
     #[test]
-    fn resetting_layout_removes_an_explicit_dashboard_override() {
-        let mut configuration = DesktopConfig {
-            dashboard: Some(dashboard_layout_to_config(DashboardLayout::default())),
-            ..DesktopConfig::default()
+    fn layouts_from_an_unknown_schema_are_ignored() {
+        let config = DashboardLayoutConfig {
+            schema_version: DASHBOARD_LAYOUT_SCHEMA_VERSION + 1,
+            ..DashboardLayoutConfig::default()
         };
 
-        assert!(update_persisted_dashboard_layout(
+        assert_eq!(telemetry_layout_from_config(&config), None);
+        assert_eq!(car_setup_layout_from_config(&config), None);
+    }
+
+    #[test]
+    fn telemetry_changes_preserve_car_setup_configuration() {
+        let mut configuration = DesktopConfig::default();
+        let car_setup = car_setup_layout();
+        update_persisted_car_setup_layout(&mut configuration, false, Some(car_setup.clone()));
+
+        update_persisted_telemetry_layout(
+            &mut configuration,
+            false,
+            Some(TelemetryLayout {
+                chart_columns: 2,
+                ..TelemetryLayout::default()
+            }),
+        );
+
+        assert_eq!(
+            car_setup_layout_from_config(configuration.dashboard.as_ref().unwrap()),
+            Some(car_setup)
+        );
+    }
+
+    #[test]
+    fn car_setup_changes_preserve_telemetry_configuration() {
+        let mut configuration = DesktopConfig::default();
+        let telemetry = TelemetryLayout {
+            chart_columns: 2,
+            ..TelemetryLayout::default()
+        };
+        update_persisted_telemetry_layout(&mut configuration, false, Some(telemetry.clone()));
+
+        update_persisted_car_setup_layout(&mut configuration, false, Some(car_setup_layout()));
+
+        assert_telemetry_layout_equivalent(
+            telemetry_layout_from_config(configuration.dashboard.as_ref().unwrap()),
+            &telemetry,
+        );
+    }
+
+    #[test]
+    fn screen_resets_remove_only_their_own_override() {
+        let mut configuration = DesktopConfig::default();
+        let car_setup = car_setup_layout();
+        update_persisted_telemetry_layout(
+            &mut configuration,
+            false,
+            Some(TelemetryLayout {
+                chart_columns: 2,
+                ..TelemetryLayout::default()
+            }),
+        );
+        update_persisted_car_setup_layout(&mut configuration, false, Some(car_setup.clone()));
+
+        assert!(update_persisted_telemetry_layout(
             &mut configuration,
             true,
-            None,
+            Some(TelemetryLayout::default()),
+        ));
+        assert_eq!(
+            car_setup_layout_from_config(configuration.dashboard.as_ref().unwrap()),
+            Some(car_setup)
+        );
+
+        assert!(update_persisted_car_setup_layout(
+            &mut configuration,
+            true,
+            Some(CarSetupLayout::default()),
         ));
         assert_eq!(configuration.dashboard, None);
-        assert!(update_persisted_dashboard_layout(
-            &mut configuration,
-            true,
-            Some(DashboardLayout::default()),
+    }
+
+    #[test]
+    fn only_the_selected_screen_is_foreground() {
+        assert!(screen_is_foreground(
+            Screen::Telemetry,
+            Screen::Telemetry,
+            false
         ));
+        assert!(!screen_is_foreground(
+            Screen::CarSetup,
+            Screen::Telemetry,
+            false
+        ));
+        assert!(!screen_is_foreground(
+            Screen::Telemetry,
+            Screen::Telemetry,
+            true
+        ));
+        assert!(workspace_is_foreground(Screen::CarSetup, false));
+        assert!(!workspace_is_foreground(Screen::Settings, false));
     }
 
     #[test]
-    fn dashboard_refreshes_only_while_it_is_foreground() {
-        assert!(dashboard_is_foreground(Screen::Dashboard, false));
-        assert!(!dashboard_is_foreground(Screen::Dashboard, true));
-        assert!(!dashboard_is_foreground(Screen::Settings, false));
+    fn restoring_a_backgrounded_window_requests_a_workspace_refresh() {
+        assert!(window_became_foreground(true, false));
+        assert!(!window_became_foreground(false, false));
+        assert!(!window_became_foreground(false, true));
+        assert!(!window_became_foreground(true, true));
     }
 
     #[test]
-    fn dashboard_owns_the_padding_beneath_the_integrated_title_bar_tabs() {
-        assert_eq!(screen_content_padding(Screen::Dashboard), 0.0);
+    fn workspace_screens_own_their_content_padding() {
+        assert_eq!(screen_content_padding(Screen::Telemetry), 0.0);
+        assert_eq!(screen_content_padding(Screen::CarSetup), 0.0);
         assert!(screen_content_padding(Screen::Settings) > 0.0);
     }
 
     #[test]
-    fn only_telemetry_events_with_samples_request_a_dashboard_refresh() {
-        assert!(telemetry_refreshes_dashboard(&LiveTelemetryMessage::Batch(
+    fn only_telemetry_events_with_samples_refresh_the_visible_screen() {
+        assert!(telemetry_refreshes_workspace(&LiveTelemetryMessage::Batch(
             LiveTelemetryBatch::default()
         )));
-        assert!(!telemetry_refreshes_dashboard(
+        assert!(!telemetry_refreshes_workspace(
             &LiveTelemetryMessage::Waiting
         ));
-        assert!(!telemetry_refreshes_dashboard(
+        assert!(!telemetry_refreshes_workspace(
             &LiveTelemetryMessage::Connected
         ));
-        assert!(!telemetry_refreshes_dashboard(
+        assert!(!telemetry_refreshes_workspace(
             &LiveTelemetryMessage::Error("test".to_owned())
         ));
     }

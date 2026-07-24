@@ -1,10 +1,12 @@
 # Application fonts
 
-The Windows application uses the system-provided Segoe UI for interface text
-and Cascadia Mono for telemetry values. IBM Plex Sans JP is bundled as a
-Japanese fallback from the official
-[IBM Plex releases](https://github.com/IBM/plex/releases):
+Chiaro bundles IBM Plex fonts so its typography does not depend on fonts
+installed by the operating system:
 
-- IBM Plex Sans JP Regular: `@ibm/plex-sans-jp@3.0.0`
+- IBM Plex Sans JP Regular
+- IBM Plex Sans JP SemiBold
+- IBM Plex Mono Regular
 
-The fonts are distributed under the SIL Open Font License 1.1. See `OFL.txt`.
+The files are from the official
+[IBM Plex repository](https://github.com/IBM/plex/tree/2f9ba1b25957d958db71a849e85d72e3ecfb845a).
+They are distributed under the SIL Open Font License 1.1. See `OFL.txt`.

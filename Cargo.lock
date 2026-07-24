@@ -521,13 +521,14 @@ name = "chiaro"
 version = "0.2.1"
 dependencies = [
  "chiaro_actions",
+ "chiaro_car_setup_ui",
  "chiaro_config",
- "chiaro_dashboard_ui",
  "chiaro_ibt_picker",
  "chiaro_live_telemetry",
  "chiaro_navigation_ui",
  "chiaro_settings_ui",
  "chiaro_telemetry",
+ "chiaro_telemetry_ui",
  "chiaro_tray",
  "chiaro_widgets",
  "chiaro_window",
@@ -541,27 +542,24 @@ name = "chiaro_actions"
 version = "0.2.1"
 
 [[package]]
+name = "chiaro_car_setup_ui"
+version = "0.2.1"
+dependencies = [
+ "chiaro_irsdk",
+ "chiaro_telemetry",
+ "chiaro_widgets",
+ "iced",
+ "iced_fonts",
+ "serde_yaml_ng",
+]
+
+[[package]]
 name = "chiaro_config"
 version = "0.2.1"
 dependencies = [
  "config",
  "serde",
  "toml 1.1.2+spec-1.1.0",
-]
-
-[[package]]
-name = "chiaro_dashboard_ui"
-version = "0.2.1"
-dependencies = [
- "chiaro_actions",
- "chiaro_irsdk",
- "chiaro_telemetry",
- "chiaro_time_series_chart",
- "chiaro_widgets",
- "iced",
- "iced_fonts",
- "iced_plot",
- "serde_yaml_ng",
 ]
 
 [[package]]
@@ -620,6 +618,20 @@ name = "chiaro_telemetry"
 version = "0.2.1"
 dependencies = [
  "chiaro_irsdk",
+]
+
+[[package]]
+name = "chiaro_telemetry_ui"
+version = "0.2.1"
+dependencies = [
+ "chiaro_actions",
+ "chiaro_irsdk",
+ "chiaro_telemetry",
+ "chiaro_time_series_chart",
+ "chiaro_widgets",
+ "iced",
+ "iced_fonts",
+ "iced_plot",
 ]
 
 [[package]]

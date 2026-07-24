@@ -25,8 +25,10 @@ fn main() -> iced::Result {
         .theme(Gallery::theme)
         .style(|_, theme| surface::application(theme))
         .font(LUCIDE_FONT_BYTES)
-        .font(typography::SANS_JP_REGULAR_BYTES)
-        .default_font(typography::SANS_SEMIBOLD)
+        .font(typography::SANS_REGULAR_BYTES)
+        .font(typography::SANS_SEMIBOLD_BYTES)
+        .font(typography::MONO_REGULAR_BYTES)
+        .default_font(typography::SANS)
         .window(iced::window::Settings {
             size: iced::Size::new(1_000.0, 800.0),
             ..iced::window::Settings::default()
