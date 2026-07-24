@@ -334,12 +334,12 @@ fn ghost_style(theme: &Theme, status: iced_button::Status) -> iced_button::Style
     let (background, text_color) = match status {
         iced_button::Status::Active => (None, palette.background.base.text),
         iced_button::Status::Hovered => (
-            Some(palette.background.weaker.color),
-            palette.background.weaker.text,
-        ),
-        iced_button::Status::Pressed => (
             Some(palette.background.weak.color),
             palette.background.weak.text,
+        ),
+        iced_button::Status::Pressed => (
+            Some(palette.background.neutral.color),
+            palette.background.neutral.text,
         ),
         iced_button::Status::Disabled => (None, with_alpha(palette.background.base.text, 0.4)),
     };
@@ -452,21 +452,20 @@ mod tests {
     #[test]
     fn ghost_background_only_appears_during_interaction() {
         let theme = Theme::Dark;
+        let palette = theme.extended_palette();
 
         assert!(
             ghost_style(&theme, iced_button::Status::Active)
                 .background
                 .is_none()
         );
-        assert!(
-            ghost_style(&theme, iced_button::Status::Hovered)
-                .background
-                .is_some()
+        assert_eq!(
+            ghost_style(&theme, iced_button::Status::Hovered).background,
+            Some(Background::Color(palette.background.weak.color))
         );
-        assert!(
-            ghost_style(&theme, iced_button::Status::Pressed)
-                .background
-                .is_some()
+        assert_eq!(
+            ghost_style(&theme, iced_button::Status::Pressed).background,
+            Some(Background::Color(palette.background.neutral.color))
         );
         assert!(
             ghost_style(&theme, iced_button::Status::Disabled)
