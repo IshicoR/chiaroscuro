@@ -518,7 +518,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chiaro"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_actions",
  "chiaro_config",
@@ -538,11 +538,11 @@ dependencies = [
 
 [[package]]
 name = "chiaro_actions"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "chiaro_config"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "config",
  "serde",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_dashboard_ui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_actions",
  "chiaro_irsdk",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_ibt_picker"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_telemetry",
  "rfd",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_irsdk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bitflags 2.13.0",
  "encoding_rs",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_live_telemetry"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_irsdk",
  "chiaro_telemetry",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_navigation_ui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_actions",
  "chiaro_widgets",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_settings_ui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_actions",
  "chiaro_irsdk",
@@ -617,14 +617,14 @@ dependencies = [
 
 [[package]]
 name = "chiaro_telemetry"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_irsdk",
 ]
 
 [[package]]
 name = "chiaro_time_series_chart"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_widgets",
  "iced",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_tray"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_actions",
  "iced",
@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_widgets"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "iced",
  "iced_fonts",
@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "chiaro_window"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chiaro_widgets",
  "iced",
