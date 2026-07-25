@@ -7,10 +7,11 @@ use iced::{
 use iced_fonts::lucide;
 
 /// Width shared by the navigation rail and the title-bar brand area.
-pub const WIDTH: f32 = 48.0;
+pub const WIDTH: f32 = 46.0;
 const ICON_SIZE: u32 = 20;
-const RAIL_VERTICAL_PADDING: u16 = 8;
-const RAIL_HORIZONTAL_PADDING: u16 = 4;
+const RAIL_VERTICAL_PADDING: u16 = 12;
+const RAIL_HORIZONTAL_PADDING: u16 = 3;
+const DESTINATION_SPACING: u32 = 4;
 const WINDOW_CORNER_RADIUS: f32 = 10.0;
 
 #[derive(Debug, Clone, Default)]
@@ -40,12 +41,20 @@ pub fn update(_state: &mut Navigation, message: NavigationMessage) -> Option<Scr
 }
 
 pub fn view(state: &Navigation, rounded: bool) -> Element<'_, NavigationMessage> {
-    let primary_destinations = column![destination(
-        lucide::gauge().size(ICON_SIZE),
-        Screen::Dashboard,
-        state.current,
-    ),]
-    .width(Length::Fill);
+    let primary_destinations = column![
+        destination(
+            lucide::activity().size(ICON_SIZE),
+            Screen::Telemetry,
+            state.current,
+        ),
+        destination(
+            lucide::wrench().size(ICON_SIZE),
+            Screen::CarSetup,
+            state.current,
+        ),
+    ]
+    .width(Length::Fill)
+    .spacing(DESTINATION_SPACING);
     let application_destinations = column![destination(
         lucide::settings().size(ICON_SIZE),
         Screen::Settings,
@@ -113,10 +122,10 @@ mod tests {
     };
 
     #[test]
-    fn compact_rail_keeps_a_40_pixel_target_inside_48_pixels() {
-        assert_eq!(WIDTH, 48.0);
-        assert_eq!(RAIL_HORIZONTAL_PADDING, 4);
-        assert_eq!(RAIL_VERTICAL_PADDING, 8);
+    fn compact_rail_keeps_a_40_pixel_target_inside_46_pixels() {
+        assert_eq!(WIDTH, 46.0);
+        assert_eq!(RAIL_HORIZONTAL_PADDING, 3);
+        assert_eq!(RAIL_VERTICAL_PADDING, 12);
         assert_eq!(WIDTH - f32::from(RAIL_HORIZONTAL_PADDING) * 2.0, 40.0);
     }
 
@@ -127,6 +136,11 @@ mod tests {
         navigation.navigate(Screen::Settings);
 
         assert_eq!(navigation.current(), Screen::Settings);
+    }
+
+    #[test]
+    fn navigation_starts_on_telemetry() {
+        assert_eq!(Navigation::default().current(), Screen::Telemetry);
     }
 
     #[test]

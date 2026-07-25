@@ -27,7 +27,7 @@ const IRACING_WINDOWS_ONLY_REASON: &str =
 ///
 /// The desktop owns this selection while [`LiveTelemetryMessage`] remains
 /// transport-neutral. A cloud transport can therefore be added as another
-/// variant without changing the dashboard or telemetry session model.
+/// variant without changing the screen or telemetry session model.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub enum LiveTelemetrySource {
     #[default]

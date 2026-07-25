@@ -1,0 +1,25 @@
+[package]
+name = "chiaro_telemetry_ui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Telemetry screen state, update logic, and Iced view for Chiaro."
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/telemetry_ui.rs"
+
+[dependencies]
+chiaro_actions = { workspace = true }
+chiaro_widgets = { workspace = true }
+chiaro_time_series_chart = { workspace = true }
+chiaro_irsdk = { workspace = true }
+chiaro_telemetry = { workspace = true }
+iced = { workspace = true }
+iced_fonts = { workspace = true }
+iced_plot = { workspace = true }
