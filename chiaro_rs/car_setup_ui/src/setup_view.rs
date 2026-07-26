@@ -1,3 +1,7 @@
+use chiaro_i18n::{
+    Text, cylinder_count, gear_count, idle_rpm, item_number, redline_rpm, setup_label, setup_value,
+    tr,
+};
 use chiaro_irsdk::{Driver, DriverInfo, SdkBool, SessionInfoDocument};
 use chiaro_telemetry::{ConnectionStatus, LiveTelemetrySourceInfo, Session};
 use chiaro_widgets::{BadgeVariant, badge, callout, typography};
@@ -140,15 +144,17 @@ impl SetupViewData {
                 .car_name
                 .as_deref()
                 .or_else(|| session.ibt_info().and_then(|info| info.car_name.as_deref()))
-                .unwrap_or("Waiting for car data")
+                .unwrap_or(tr(Text::WaitingForCarData))
                 .to_owned();
         }
         if key == STATUS_CARD_KEY {
-            return "Setup data".to_owned();
+            return tr(Text::SetupData).to_owned();
         }
 
-        self.section(key)
-            .map_or_else(|| "Setup".to_owned(), |section| section.title.clone())
+        self.section(key).map_or_else(
+            || tr(Text::Setup).to_owned(),
+            |section| section.title.clone(),
+        )
     }
 
     pub(super) fn card_icon(key: &str) -> iced::widget::Text<'static> {
@@ -172,8 +178,8 @@ impl SetupViewData {
             _ => self.section(key).map_or_else(
                 || {
                     empty_state(
-                        "Setup unavailable",
-                        "This setup section is no longer available.",
+                        tr(Text::SetupUnavailable),
+                        tr(Text::SetupSectionUnavailable),
                     )
                 },
                 section_content,
@@ -321,14 +327,17 @@ fn vehicle_sections(
     {
         sections.push(info_section(
             VEHICLE_SPECIFICATIONS_CARD_KEY,
-            "Vehicle specifications",
+            tr(Text::VehicleSpecifications),
             [
-                ("Version", optional_text(info.driver_car_version.as_deref())),
-                ("Powertrain", format_powertrain(info, driver)),
-                ("Transmission", format_transmission(info)),
-                ("Shift lights", format_shift_lights(info)),
-                ("Fuel system", format_fuel_system(info)),
-                ("Tyre compounds", format_tyre_compounds(info)),
+                (
+                    tr(Text::Version),
+                    optional_text(info.driver_car_version.as_deref()),
+                ),
+                (tr(Text::Powertrain), format_powertrain(info, driver)),
+                (tr(Text::Transmission), format_transmission(info)),
+                (tr(Text::ShiftLights), format_shift_lights(info)),
+                (tr(Text::FuelSystem), format_fuel_system(info)),
+                (tr(Text::TyreCompounds), format_tyre_compounds(info)),
             ],
         ));
     }
@@ -336,35 +345,38 @@ fn vehicle_sections(
     if has_regulations(driver_info, driver, fixed_setup) {
         sections.push(info_section(
             REGULATIONS_CARD_KEY,
-            "Regulations",
+            tr(Text::Regulations),
             [
                 (
-                    "Class",
+                    tr(Text::Class),
                     optional_text(driver.and_then(|driver| driver.car_class_short_name.as_deref())),
                 ),
                 (
-                    "Setup rules",
+                    tr(Text::SetupRules),
                     match fixed_setup {
-                        Some(true) => "Fixed setup".to_owned(),
-                        Some(false) => "Open setup".to_owned(),
+                        Some(true) => tr(Text::FixedSetup).to_owned(),
+                        Some(false) => tr(Text::OpenSetup).to_owned(),
                         None => "--".to_owned(),
                     },
                 ),
-                ("Fuel allowance", format_fuel_allowance(driver_info, driver)),
                 (
-                    "Weight penalty",
+                    tr(Text::FuelAllowance),
+                    format_fuel_allowance(driver_info, driver),
+                ),
+                (
+                    tr(Text::WeightPenalty),
                     optional_text(
                         driver.and_then(|driver| driver.car_class_weight_penalty.as_deref()),
                     ),
                 ),
                 (
-                    "Power adjustment",
+                    tr(Text::PowerAdjustment),
                     optional_text(
                         driver.and_then(|driver| driver.car_class_power_adjust.as_deref()),
                     ),
                 ),
                 (
-                    "Dry tyre set limit",
+                    tr(Text::DryTyreSetLimit),
                     format_dry_tyre_set_limit(
                         driver.and_then(|driver| driver.car_class_dry_tire_set_limit.as_deref()),
                     ),
@@ -465,14 +477,14 @@ fn format_powertrain(info: &DriverInfo, driver: Option<&Driver>) -> String {
     let mut parts = Vec::new();
 
     match electric {
-        Some(true) => parts.push("Electric".to_owned()),
-        Some(false) => parts.push("Combustion".to_owned()),
+        Some(true) => parts.push(tr(Text::Electric).to_owned()),
+        Some(false) => parts.push(tr(Text::Combustion).to_owned()),
         None => {},
     }
     if electric != Some(true)
         && let Some(cylinders) = info.driver_car_eng_cylinder_count
     {
-        parts.push(format!("{cylinders} cyl"));
+        parts.push(cylinder_count(cylinders));
     }
     if let Some(range) = format_rpm_range(info.driver_car_idle_rpm, info.driver_car_red_line) {
         parts.push(range);
@@ -484,7 +496,7 @@ fn format_powertrain(info: &DriverInfo, driver: Option<&Driver>) -> String {
 fn format_transmission(info: &DriverInfo) -> String {
     let mut parts = Vec::new();
     if let Some(gears) = info.driver_car_gear_num_forward {
-        parts.push(format!("{gears}-speed"));
+        parts.push(gear_count(gears));
     }
     if info
         .driver_car_gear_neutral
@@ -550,8 +562,8 @@ fn format_tyre_compounds(info: &DriverInfo) -> String {
             continue;
         };
         let value = tyre.tire_index.map_or_else(
-            || compound.to_owned(),
-            |index| format!("{index} {compound}"),
+            || setup_value(compound),
+            |index| format!("{index} {}", setup_value(compound)),
         );
         if !compounds.contains(&value) {
             compounds.push(value);
@@ -567,8 +579,8 @@ fn format_rpm_range(idle: Option<f64>, redline: Option<f64>) -> Option<String> {
         redline.filter(|value| value.is_finite()),
     ) {
         (Some(idle), Some(redline)) => Some(format!("{idle:.0}–{redline:.0} rpm")),
-        (Some(idle), None) => Some(format!("{idle:.0} rpm idle")),
-        (None, Some(redline)) => Some(format!("{redline:.0} rpm redline")),
+        (Some(idle), None) => Some(idle_rpm(idle)),
+        (None, Some(redline)) => Some(redline_rpm(redline)),
         (None, None) => None,
     }
 }
@@ -815,6 +827,14 @@ fn setup_row_depth(row: &SetupRow) -> usize {
 }
 
 fn setup_corner(label: &str) -> Option<SetupCorner> {
+    match label {
+        "左フロント" => return Some(SetupCorner::LeftFront),
+        "右フロント" => return Some(SetupCorner::RightFront),
+        "左リア" => return Some(SetupCorner::LeftRear),
+        "右リア" => return Some(SetupCorner::RightRear),
+        _ => {},
+    }
+
     let normalized = label
         .chars()
         .filter(char::is_ascii_alphanumeric)
@@ -844,12 +864,18 @@ fn summary_content<'a>(
     data: &'a SetupViewData,
 ) -> Element<'a, CarSetupMessage> {
     let details = grid([
-        summary_item("Setup", data.setup_name.as_deref().unwrap_or("--")),
-        summary_item("Load type", data.load_type.as_deref().unwrap_or("--")),
-        summary_item("Car path", data.car_path.as_deref().unwrap_or("--")),
-        summary_item("Source", source_label(session, live_source)),
-        summary_item("Revision", data.update_count.as_deref().unwrap_or("--")),
-        summary_item("Access", "Read only"),
+        summary_item(tr(Text::Setup), data.setup_name.as_deref().unwrap_or("--")),
+        summary_item(
+            tr(Text::LoadType),
+            setup_value(data.load_type.as_deref().unwrap_or("--")),
+        ),
+        summary_item(tr(Text::CarPath), data.car_path.as_deref().unwrap_or("--")),
+        summary_item(tr(Text::Source), source_label(session, live_source)),
+        summary_item(
+            tr(Text::Revision),
+            data.update_count.as_deref().unwrap_or("--"),
+        ),
+        summary_item(tr(Text::Access), tr(Text::ReadOnly)),
     ])
     .columns(3)
     .spacing(1)
@@ -865,24 +891,32 @@ fn status_badges<'a>(data: &'a SetupViewData) -> Vec<Element<'a, CarSetupMessage
 
     if let Some(modified) = data.modified {
         statuses.push(
-            badge(if modified { "Modified" } else { "Saved" })
-                .variant(if modified {
-                    BadgeVariant::Primary
-                } else {
-                    BadgeVariant::Success
-                })
-                .into(),
+            badge(if modified {
+                tr(Text::Modified)
+            } else {
+                tr(Text::Saved)
+            })
+            .variant(if modified {
+                BadgeVariant::Primary
+            } else {
+                BadgeVariant::Success
+            })
+            .into(),
         );
     }
     if let Some(passed) = data.passed_tech {
         statuses.push(
-            badge(if passed { "Tech passed" } else { "Tech failed" })
-                .variant(if passed {
-                    BadgeVariant::Success
-                } else {
-                    BadgeVariant::Danger
-                })
-                .into(),
+            badge(if passed {
+                tr(Text::TechPassed)
+            } else {
+                tr(Text::TechFailed)
+            })
+            .variant(if passed {
+                BadgeVariant::Success
+            } else {
+                BadgeVariant::Danger
+            })
+            .into(),
         );
     }
 
@@ -913,7 +947,7 @@ fn section_content(section: &SetupSection) -> Element<'_, CarSetupMessage> {
     let mut content = column![].spacing(8);
 
     if blocks.is_empty() {
-        content = content.push(setup_value_row("Value", "--", 0));
+        content = content.push(setup_value_row(tr(Text::Value), "--", 0));
     } else {
         for block in blocks {
             content = content.push(match block {
@@ -970,7 +1004,7 @@ fn corner_comparison_layout(
     compact: bool,
 ) -> Element<'static, CarSetupMessage> {
     let title = container(
-        text("Corner comparison")
+        text(tr(Text::CornerComparison))
             .size(TABLE_BODY_SIZE)
             .font(typography::SANS_SEMIBOLD),
     )
@@ -997,8 +1031,8 @@ fn corner_comparison_layout(
     if compact && comparison.columns.len() > 2 && !front.is_empty() && !rear.is_empty() {
         return column![
             title,
-            corner_table_group("Front", comparison, &front),
-            corner_table_group("Rear", comparison, &rear),
+            corner_table_group(tr(Text::Front), comparison, &front),
+            corner_table_group(tr(Text::Rear), comparison, &rear),
         ]
         .spacing(6)
         .width(Length::Fill)
@@ -1064,7 +1098,7 @@ fn corner_table(
 }
 
 fn corner_table_header(columns: &[SetupCorner]) -> Element<'static, CarSetupMessage> {
-    let mut header = row![corner_table_label_cell("Setting".to_owned(), true)]
+    let mut header = row![corner_table_label_cell(tr(Text::Setting).to_owned(), true)]
         .spacing(0)
         .align_y(Vertical::Center)
         .width(Length::Fill);
@@ -1202,22 +1236,20 @@ fn setup_value_row<'a>(
 
 fn status_content(data: &SetupViewData) -> Element<'_, CarSetupMessage> {
     match &data.status {
-        SetupDataStatus::Waiting => empty_state(
-            "No setup data yet",
-            "Connect to a live telemetry source or load an IBT recording to inspect the player car setup.",
-        ),
+        SetupDataStatus::Waiting => {
+            empty_state(tr(Text::NoSetupDataYet), tr(Text::NoSetupDataDescription))
+        },
         SetupDataStatus::Missing => empty_state(
-            "Setup unavailable",
-            "This session does not publish CarSetup data. It can be absent while spectating, replaying, or changing sessions.",
+            tr(Text::SetupUnavailable),
+            tr(Text::SetupUnavailableDescription),
         ),
         SetupDataStatus::ParseError(error) => empty_state(
-            "Setup could not be read",
-            format!("The session information is not valid YAML: {error}"),
+            tr(Text::SetupCouldNotBeRead),
+            format!("{}: {error}", tr(Text::SessionInfoInvalidYaml)),
         ),
-        SetupDataStatus::Available => empty_state(
-            "No setup values",
-            "iRacing published a CarSetup section, but it contains no displayable values.",
-        ),
+        SetupDataStatus::Available => {
+            empty_state(tr(Text::NoSetupValues), tr(Text::NoSetupValuesDescription))
+        },
     }
 }
 
@@ -1254,10 +1286,18 @@ fn source_label(session: &Session, live_source: LiveTelemetrySourceInfo) -> Stri
 
     match session.connection() {
         ConnectionStatus::Disconnected if !live_source.is_available() => {
-            format!("{} · unavailable", live_source.display_name())
+            format!("{} · {}", live_source.display_name(), tr(Text::Unavailable))
         },
-        ConnectionStatus::Disconnected => format!("{} · disconnected", live_source.display_name()),
-        ConnectionStatus::Connecting => format!("{} · waiting", live_source.display_name()),
+        ConnectionStatus::Disconnected => {
+            format!(
+                "{} · {}",
+                live_source.display_name(),
+                tr(Text::Disconnected)
+            )
+        },
+        ConnectionStatus::Connecting => {
+            format!("{} · {}", live_source.display_name(), tr(Text::Waiting))
+        },
         ConnectionStatus::Connected => live_source.display_name().to_owned(),
     }
 }
@@ -1302,10 +1342,10 @@ fn setup_sections(setup: &Value) -> Vec<SetupSection> {
     let setup = untagged(setup);
     let Value::Mapping(mapping) = setup else {
         let mut rows = Vec::new();
-        append_labeled_value(&mut rows, "Value".to_owned(), setup, 0);
+        append_labeled_value(&mut rows, tr(Text::Value).to_owned(), setup, 0);
         return vec![SetupSection {
             key: VALUE_SETUP_CARD_KEY.to_owned(),
-            title: "Setup".to_owned(),
+            title: tr(Text::Setup).to_owned(),
             rows,
         }];
     };
@@ -1337,7 +1377,7 @@ fn setup_sections(setup: &Value) -> Vec<SetupSection> {
             0,
             SetupSection {
                 key: GENERAL_SETUP_CARD_KEY.to_owned(),
-                title: "General".to_owned(),
+                title: tr(Text::General).to_owned(),
                 rows: general_rows,
             },
         );
@@ -1355,10 +1395,10 @@ fn append_collection_contents(rows: &mut Vec<SetupRow>, value: &Value, depth: us
         },
         Value::Sequence(sequence) => {
             for (index, value) in sequence.iter().enumerate() {
-                append_labeled_value(rows, format!("Item {}", index + 1), value, depth);
+                append_labeled_value(rows, item_number(index + 1), value, depth);
             }
         },
-        value => append_labeled_value(rows, "Value".to_owned(), value, depth),
+        value => append_labeled_value(rows, tr(Text::Value).to_owned(), value, depth),
     }
 }
 
@@ -1420,15 +1460,21 @@ fn is_collection(value: &Value) -> bool {
 fn scalar_value(value: &Value) -> Option<String> {
     match untagged(value) {
         Value::Null => Some("--".to_owned()),
-        Value::Bool(value) => Some(if *value { "Yes" } else { "No" }.to_owned()),
+        Value::Bool(value) => Some(if *value { tr(Text::Yes) } else { tr(Text::No) }.to_owned()),
         Value::Number(value) => Some(value.to_string()),
-        Value::String(value) => Some(non_blank(value).unwrap_or("--").to_owned()),
+        Value::String(value) => Some(setup_value(non_blank(value).unwrap_or("--"))),
         Value::Sequence(_) | Value::Mapping(_) | Value::Tagged(_) => None,
     }
 }
 
 fn yaml_key(value: &Value) -> String {
-    scalar_value(value).unwrap_or_else(|| "Value".to_owned())
+    match untagged(value) {
+        Value::Null => tr(Text::Value).to_owned(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => non_blank(value).unwrap_or("Value").to_owned(),
+        Value::Sequence(_) | Value::Mapping(_) | Value::Tagged(_) => tr(Text::Value).to_owned(),
+    }
 }
 
 fn humanize_key(value: &str) -> String {
@@ -1457,7 +1503,7 @@ fn humanize_key(value: &str) -> String {
         output.push(character);
     }
 
-    output.trim().to_owned()
+    setup_label(output.trim())
 }
 
 fn first_non_blank<'a>(values: impl IntoIterator<Item = Option<&'a str>>) -> Option<String> {

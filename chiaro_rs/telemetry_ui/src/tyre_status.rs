@@ -1,3 +1,4 @@
+use chiaro_i18n::{Text, tr};
 use chiaro_irsdk::TelemetrySample;
 use chiaro_widgets::typography;
 use iced::widget::{column, container, row, text};
@@ -15,12 +16,12 @@ pub fn view<Message: 'static>(sample: Option<TelemetrySample>) -> Element<'stati
 
     container(
         column![
-            axle_label("Front"),
+            axle_label(tr(Text::Front)),
             front,
-            axle_label("Rear"),
+            axle_label(tr(Text::Rear)),
             rear,
             container(
-                text("Carcass I / M / O · hot pressure")
+                text(tr(Text::CarcassPressure))
                     .size(10)
                     .color(Color::from_rgb(0.62, 0.62, 0.66)),
             )

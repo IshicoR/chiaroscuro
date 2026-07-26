@@ -5,6 +5,7 @@ use chiaro_car_setup_ui::{
     self as car_setup, CarSetupLayout, CarSetupLayoutFlag, CarSetupMessage, CarSetupState,
 };
 use chiaro_config::{DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig};
+use chiaro_i18n::{Text, Translations, set_locale, tr};
 use chiaro_ibt_picker as ibt;
 use chiaro_live_telemetry::{self as live_telemetry, LiveTelemetryMessage, LiveTelemetrySource};
 use chiaro_navigation_ui::{self as navigation, Navigation};
@@ -98,15 +99,20 @@ impl Chiaroscuro {
     }
 
     fn new() -> Self {
+        let configuration = DesktopConfig::load();
+        if let Ok(config) = &configuration {
+            set_locale(config.locale);
+        }
         let mut app = Self::default();
         match tray::TrayState::new() {
             Ok(tray) => app.tray = tray,
             Err(error) => eprintln!("failed to initialize system tray: {error}"),
         }
 
-        match DesktopConfig::load() {
+        match configuration {
             Ok(config) => {
                 app.settings.set_show_diagnostics(config.show_diagnostics);
+                app.settings.set_locale(config.locale);
                 if let Some(layout) = config
                     .dashboard
                     .as_ref()
@@ -124,7 +130,10 @@ impl Chiaroscuro {
                 app.configuration = config;
             },
             Err(error) => {
-                app.configuration_error = Some(format!("failed to load desktop settings: {error}"));
+                app.configuration_error = Some(format!(
+                    "{}: {error}",
+                    tr(Text::FailedToLoadDesktopSettings)
+                ));
             },
         }
 
@@ -207,12 +216,20 @@ impl Chiaroscuro {
             },
             AppMessage::Settings(message) => {
                 let persists_configuration = message.persists_configuration();
+                let changes_locale = matches!(
+                    message,
+                    SettingsMessage::SetLocale(locale) if locale != self.settings.locale()
+                );
                 let action = settings::update(&mut self.settings, message);
                 let action = self.handle_action(action);
 
                 if persists_configuration {
                     self.configuration.show_diagnostics = self.settings.show_diagnostics();
+                    self.configuration.locale = self.settings.locale();
                     self.save_configuration();
+                }
+                if changes_locale {
+                    self.relocalize();
                 }
 
                 action
@@ -346,7 +363,12 @@ impl Chiaroscuro {
         let content_padding = screen_content_padding(current_screen);
         let navigation_width = navigation::WIDTH;
 
-        let navigation = navigation::view(&self.navigation, rounded).map(AppMessage::Navigation);
+        let navigation = navigation::view(
+            &self.navigation,
+            rounded,
+            Translations::new(self.settings.locale()),
+        )
+        .map(AppMessage::Navigation);
         let content = container(screen)
             .padding(content_padding)
             .width(Fill)
@@ -464,7 +486,7 @@ impl Chiaroscuro {
             .configuration
             .save()
             .err()
-            .map(|error| format!("failed to save desktop settings: {error}"));
+            .map(|error| format!("{}: {error}", tr(Text::FailedToSaveDesktopSettings)));
     }
 
     fn telemetry_is_active(&self) -> bool {
@@ -488,6 +510,28 @@ impl Chiaroscuro {
             ),
             Screen::CarSetup => car_setup::refresh(&mut self.car_setup, &self.session),
             Screen::Settings => {},
+        }
+    }
+
+    fn relocalize(&mut self) {
+        let telemetry_layout = self.telemetry.layout_snapshot();
+        let car_setup_layout = self.car_setup.layout_snapshot();
+
+        self.telemetry = TelemetryState::default();
+        self.telemetry.apply_layout(&telemetry_layout);
+        telemetry_ui::refresh(
+            &mut self.telemetry,
+            &self.session,
+            self.reference_session.as_ref(),
+        );
+
+        self.car_setup = CarSetupState::default();
+        self.car_setup.apply_layout(&car_setup_layout);
+        car_setup::refresh(&mut self.car_setup, &self.session);
+
+        match tray::TrayState::new() {
+            Ok(tray) => self.tray = tray,
+            Err(error) => eprintln!("failed to refresh system tray locale: {error}"),
         }
     }
 

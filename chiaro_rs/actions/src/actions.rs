@@ -9,9 +9,9 @@ pub enum Screen {
 impl Screen {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Telemetry => "Telemetry",
-            Self::CarSetup => "Car setup",
-            Self::Settings => "Settings",
+            Self::Telemetry => tr(Text::Telemetry),
+            Self::CarSetup => tr(Text::CarSetup),
+            Self::Settings => tr(Text::Settings),
         }
     }
 }
@@ -26,3 +26,4 @@ pub enum Action {
     ShowWindow,
     ExitApplication,
 }
+use chiaro_i18n::{Text, tr};

@@ -16,6 +16,7 @@ path = "src/tray.rs"
 
 [dependencies]
 chiaro_actions = { workspace = true }
+chiaro_i18n = { workspace = true }
 iced = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

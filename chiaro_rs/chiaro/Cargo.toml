@@ -20,6 +20,7 @@ chiaro_actions = { workspace = true }
 chiaro_car_setup_ui = { workspace = true }
 chiaro_config = { workspace = true }
 chiaro_ibt_picker = { workspace = true }
+chiaro_i18n = { workspace = true }
 chiaro_live_telemetry = { workspace = true }
 chiaro_navigation_ui = { workspace = true }
 chiaro_settings_ui = { workspace = true }

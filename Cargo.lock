@@ -523,6 +523,7 @@ dependencies = [
  "chiaro_actions",
  "chiaro_car_setup_ui",
  "chiaro_config",
+ "chiaro_i18n",
  "chiaro_ibt_picker",
  "chiaro_live_telemetry",
  "chiaro_navigation_ui",
@@ -540,11 +541,15 @@ dependencies = [
 [[package]]
 name = "chiaro_actions"
 version = "0.3.0"
+dependencies = [
+ "chiaro_i18n",
+]
 
 [[package]]
 name = "chiaro_car_setup_ui"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_irsdk",
  "chiaro_telemetry",
  "chiaro_widgets",
@@ -557,15 +562,24 @@ dependencies = [
 name = "chiaro_config"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "config",
  "serde",
  "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
+name = "chiaro_i18n"
+version = "0.3.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "chiaro_ibt_picker"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_telemetry",
  "rfd",
  "smol",
@@ -586,6 +600,7 @@ dependencies = [
 name = "chiaro_live_telemetry"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_irsdk",
  "chiaro_telemetry",
  "iced",
@@ -597,6 +612,7 @@ name = "chiaro_navigation_ui"
 version = "0.3.0"
 dependencies = [
  "chiaro_actions",
+ "chiaro_i18n",
  "chiaro_widgets",
  "iced",
  "iced_fonts",
@@ -607,6 +623,7 @@ name = "chiaro_settings_ui"
 version = "0.3.0"
 dependencies = [
  "chiaro_actions",
+ "chiaro_i18n",
  "chiaro_irsdk",
  "chiaro_telemetry",
  "chiaro_widgets",
@@ -617,6 +634,7 @@ dependencies = [
 name = "chiaro_telemetry"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_irsdk",
 ]
 
@@ -625,6 +643,7 @@ name = "chiaro_telemetry_ui"
 version = "0.3.0"
 dependencies = [
  "chiaro_actions",
+ "chiaro_i18n",
  "chiaro_irsdk",
  "chiaro_telemetry",
  "chiaro_time_series_chart",
@@ -638,6 +657,7 @@ dependencies = [
 name = "chiaro_time_series_chart"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_widgets",
  "iced",
  "iced_plot",
@@ -648,6 +668,7 @@ name = "chiaro_tray"
 version = "0.3.0"
 dependencies = [
  "chiaro_actions",
+ "chiaro_i18n",
  "iced",
  "image",
  "tray-icon",
@@ -657,6 +678,7 @@ dependencies = [
 name = "chiaro_widgets"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "iced",
  "iced_fonts",
 ]
@@ -665,6 +687,7 @@ dependencies = [
 name = "chiaro_window"
 version = "0.3.0"
 dependencies = [
+ "chiaro_i18n",
  "chiaro_widgets",
  "iced",
  "image",

@@ -28,11 +28,7 @@ pub(super) fn format_track_position(position: f32) -> String {
 }
 
 pub(super) fn format_lap_count(lap_count: usize) -> String {
-    if lap_count == 1 {
-        "1 lap".to_owned()
-    } else {
-        format!("{lap_count} laps")
-    }
+    count_laps(lap_count)
 }
 
 pub(super) fn format_recording_duration(seconds: f64) -> String {
@@ -71,3 +67,4 @@ pub(super) fn format_lap_distance(chart_position: f64) -> String {
         format!("{percentage:.0}%")
     }
 }
+use chiaro_i18n::count_laps;

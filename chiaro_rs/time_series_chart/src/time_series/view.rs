@@ -1,3 +1,4 @@
+use chiaro_i18n::{Text, tr};
 use chiaro_widgets::context_menu as chart_context_menu;
 use iced::{
     Background, Element, Length, Theme,
@@ -75,9 +76,9 @@ impl TimeSeriesChart {
         };
 
         let menu_label = if self.interaction.tooltips_visible {
-            "Hide tooltips"
+            tr(Text::HideTooltips)
         } else {
-            "Show tooltips"
+            tr(Text::ShowTooltips)
         };
         let menu_item = container(text(menu_label).size(13))
             .width(Length::Fill)

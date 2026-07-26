@@ -8,6 +8,7 @@ use iced::{
 };
 
 use crate::{ButtonSize, ButtonVariant, card, icon_button, icon_tooltip_style, typography};
+use chiaro_i18n::{Text, collapse_label, expand_label, tr};
 use iced_fonts::lucide;
 
 pub(crate) const CARD_PADDING: f32 = 10.0;
@@ -87,9 +88,9 @@ pub fn chart_card<'a, Message: Clone + 'a>(
     lift: f32,
 ) -> Element<'a, Message> {
     let (maximize_icon, maximize_label) = if maximized {
-        (lucide::minimize_two().size(16), "Restore chart")
+        (lucide::minimize_two().size(16), tr(Text::RestoreChart))
     } else {
-        (lucide::maximize_two().size(16), "Maximize chart")
+        (lucide::maximize_two().size(16), tr(Text::MaximizeChart))
     };
     let maximize = icon_button(maximize_icon, maximize_label)
         .variant(ButtonVariant::Ghost)
@@ -189,7 +190,7 @@ pub fn card_drag_handle<Message: Clone + 'static>(
         )
         .on_press(on_press)
         .interaction(interaction),
-        container(text("Drag to reorder").size(12)).padding([4, 8]),
+        container(text(tr(Text::DragToReorder)).size(12)).padding([4, 8]),
         tooltip::Position::Top,
     )
     .gap(4)
@@ -200,9 +201,9 @@ pub fn card_drag_handle<Message: Clone + 'static>(
 
 fn collapse_accessibility_label(title: &str, collapsed: bool) -> String {
     if collapsed {
-        format!("Expand {title}")
+        expand_label(title)
     } else {
-        format!("Collapse {title}")
+        collapse_label(title)
     }
 }
 

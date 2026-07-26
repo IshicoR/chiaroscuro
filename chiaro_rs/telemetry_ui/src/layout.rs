@@ -1,5 +1,6 @@
 //! Stable identifiers and persisted layout values for the Telemetry screen.
 
+use chiaro_i18n::{Text, tr};
 use iced_fonts::lucide;
 
 use super::CARD_TITLE_ICON_SIZE;
@@ -116,23 +117,23 @@ impl ChartId {
         Self::ALL.into_iter().find(|chart| chart.key() == key)
     }
 
-    pub(super) const fn title(self) -> &'static str {
+    pub(super) fn title(self) -> &'static str {
         match self {
-            Self::Speed => "Speed",
-            Self::Pedal => "Pedal",
-            Self::BrakePressure => "Brake pressure",
-            Self::Abs => "ABS activity",
-            Self::Steering => "Steering",
-            Self::SteeringTorque => "Steering torque",
-            Self::Rpm => "Engine RPM",
-            Self::Gear => "Gear",
-            Self::Dynamics => "Vehicle dynamics",
-            Self::Yaw => "Yaw rate",
-            Self::WheelSlip => "Wheel slip",
-            Self::Tyre => "Tyre temperature",
-            Self::Suspension => "Suspension travel",
-            Self::Fuel => "Fuel used",
-            Self::Delta => "Delta",
+            Self::Speed => tr(Text::Speed),
+            Self::Pedal => tr(Text::Pedal),
+            Self::BrakePressure => tr(Text::BrakePressure),
+            Self::Abs => tr(Text::AbsActivity),
+            Self::Steering => tr(Text::Steering),
+            Self::SteeringTorque => tr(Text::SteeringTorque),
+            Self::Rpm => tr(Text::EngineRpm),
+            Self::Gear => tr(Text::Gear),
+            Self::Dynamics => tr(Text::VehicleDynamics),
+            Self::Yaw => tr(Text::YawRate),
+            Self::WheelSlip => tr(Text::WheelSlip),
+            Self::Tyre => tr(Text::TyreTemperature),
+            Self::Suspension => tr(Text::SuspensionTravel),
+            Self::Fuel => tr(Text::FuelUsed),
+            Self::Delta => tr(Text::Delta),
         }
     }
 
@@ -201,15 +202,15 @@ impl LapAnalysisCardId {
         Self::ALL.into_iter().find(|card| card.key() == key)
     }
 
-    pub(super) const fn title(self) -> &'static str {
+    pub(super) fn title(self) -> &'static str {
         match self {
-            Self::Cursor => "Cursor",
-            Self::ReferenceCursor => "Reference cursor",
-            Self::Vehicle => "Vehicle",
-            Self::Inputs => "Inputs",
-            Self::Dynamics => "Dynamics",
-            Self::Tyres => "Tyres",
-            Self::Wheels => "Wheels",
+            Self::Cursor => tr(Text::Cursor),
+            Self::ReferenceCursor => tr(Text::ReferenceCursor),
+            Self::Vehicle => tr(Text::Vehicle),
+            Self::Inputs => tr(Text::Inputs),
+            Self::Dynamics => tr(Text::Dynamics),
+            Self::Tyres => tr(Text::Tyres),
+            Self::Wheels => tr(Text::Wheels),
         }
     }
 
@@ -256,12 +257,12 @@ impl SetupCardId {
         Self::ALL.into_iter().find(|card| card.key() == key)
     }
 
-    pub(super) const fn title(self) -> &'static str {
+    pub(super) fn title(self) -> &'static str {
         match self {
-            Self::Session => "Session",
-            Self::Reference => "Reference",
-            Self::Laps => "My laps",
-            Self::Charts => "Charts",
+            Self::Session => tr(Text::Session),
+            Self::Reference => tr(Text::Reference),
+            Self::Laps => tr(Text::MyLaps),
+            Self::Charts => tr(Text::Charts),
         }
     }
 

@@ -1,4 +1,5 @@
 use chiaro_actions::Screen;
+use chiaro_i18n::{Text, Translations};
 use chiaro_widgets::navigation_item;
 use iced::{
     Background, Border, Element, Length, Theme,
@@ -40,17 +41,23 @@ pub fn update(_state: &mut Navigation, message: NavigationMessage) -> Option<Scr
     }
 }
 
-pub fn view(state: &Navigation, rounded: bool) -> Element<'_, NavigationMessage> {
+pub fn view(
+    state: &Navigation,
+    rounded: bool,
+    translations: Translations,
+) -> Element<'_, NavigationMessage> {
     let primary_destinations = column![
         destination(
             lucide::activity().size(ICON_SIZE),
             Screen::Telemetry,
             state.current,
+            translations,
         ),
         destination(
             lucide::wrench().size(ICON_SIZE),
             Screen::CarSetup,
             state.current,
+            translations,
         ),
     ]
     .width(Length::Fill)
@@ -59,6 +66,7 @@ pub fn view(state: &Navigation, rounded: bool) -> Element<'_, NavigationMessage>
         lucide::settings().size(ICON_SIZE),
         Screen::Settings,
         state.current,
+        translations,
     ),]
     .width(Length::Fill);
     let destinations = column![
@@ -84,13 +92,22 @@ fn destination(
     icon: impl Into<Element<'static, NavigationMessage>>,
     screen: Screen,
     current: Screen,
+    translations: Translations,
 ) -> Element<'static, NavigationMessage> {
     let selected = screen == current;
 
-    navigation_item(icon, screen.title())
+    navigation_item(icon, screen_title(screen, translations))
         .selected(selected)
         .on_press(NavigationMessage::Navigate(screen))
         .into()
+}
+
+const fn screen_title(screen: Screen, translations: Translations) -> &'static str {
+    translations.get(match screen {
+        Screen::Telemetry => Text::Telemetry,
+        Screen::CarSetup => Text::CarSetup,
+        Screen::Settings => Text::Settings,
+    })
 }
 
 fn sidebar_style(theme: &Theme, rounded: bool) -> container::Style {

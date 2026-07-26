@@ -7,6 +7,7 @@ members = [
     "chiaro_rs/config",
     "chiaro_rs/telemetry_ui",
     "chiaro_rs/ibt_picker",
+    "chiaro_rs/i18n",
     "chiaro_rs/irsdk",
     "chiaro_rs/live_telemetry",
     "chiaro_rs/navigation_ui",
@@ -34,6 +35,7 @@ chiaro_car_setup_ui = { version = "0.3.0", path = "chiaro_rs/car_setup_ui" }
 chiaro_config = { version = "0.3.0", path = "chiaro_rs/config" }
 chiaro_telemetry_ui = { version = "0.3.0", path = "chiaro_rs/telemetry_ui" }
 chiaro_ibt_picker = { version = "0.3.0", path = "chiaro_rs/ibt_picker" }
+chiaro_i18n = { version = "0.3.0", path = "chiaro_rs/i18n" }
 chiaro_live_telemetry = { version = "0.3.0", path = "chiaro_rs/live_telemetry" }
 chiaro_navigation_ui = { version = "0.3.0", path = "chiaro_rs/navigation_ui" }
 chiaro_settings_ui = { version = "0.3.0", path = "chiaro_rs/settings_ui" }

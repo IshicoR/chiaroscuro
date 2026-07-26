@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use chiaro_i18n::{Locale, Text, tr};
 use config::{Config, ConfigError, File};
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,7 @@ pub const DASHBOARD_LAYOUT_SCHEMA_VERSION: u32 = 1;
 #[serde(default)]
 pub struct DesktopConfig {
     pub show_diagnostics: bool,
+    pub locale: Locale,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dashboard: Option<DashboardLayoutConfig>,
 }
@@ -58,8 +60,9 @@ impl Default for DashboardLayoutConfig {
 impl DesktopConfig {
     pub fn load() -> Result<Self, ConfigError> {
         let defaults = Self::default();
-        let mut builder =
-            Config::builder().set_default("show_diagnostics", defaults.show_diagnostics)?;
+        let mut builder = Config::builder()
+            .set_default("show_diagnostics", defaults.show_diagnostics)?
+            .set_default("locale", defaults.locale.id())?;
 
         if let Some(path) = settings_path() {
             builder = builder.add_source(File::from(path).required(false));
@@ -70,15 +73,12 @@ impl DesktopConfig {
 
     pub fn save(&self) -> io::Result<()> {
         let path = settings_path().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "neither XDG_CONFIG_HOME, APPDATA nor HOME is available",
-            )
+            io::Error::new(io::ErrorKind::NotFound, tr(Text::ConfigLocationUnavailable))
         })?;
         let Some(parent) = path.parent() else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "desktop settings path has no parent directory",
+                tr(Text::ConfigPathHasNoParent),
             ));
         };
 
@@ -121,6 +121,8 @@ fn settings_path_from(
 mod tests {
     use std::{collections::BTreeMap, ffi::OsStr, path::PathBuf};
 
+    use chiaro_i18n::Locale;
+
     use super::{
         DASHBOARD_LAYOUT_SCHEMA_VERSION, DashboardLayoutConfig, DesktopConfig, settings_path_from,
     };
@@ -143,10 +145,14 @@ mod tests {
     fn encodes_desktop_settings_as_toml() {
         let config = DesktopConfig {
             show_diagnostics: true,
+            locale: Locale::English,
             dashboard: None,
         };
 
-        assert_eq!(config.encode().unwrap(), "show_diagnostics = true\n");
+        assert_eq!(
+            config.encode().unwrap(),
+            "show_diagnostics = true\nlocale = \"english\"\n"
+        );
     }
 
     #[test]
@@ -154,7 +160,16 @@ mod tests {
         let config: DesktopConfig = toml::from_str("show_diagnostics = true\n").unwrap();
 
         assert!(config.show_diagnostics);
+        assert_eq!(config.locale, Locale::English);
         assert_eq!(config.dashboard, None);
+    }
+
+    #[test]
+    fn locale_round_trips_through_toml() {
+        let config: DesktopConfig = toml::from_str("locale = \"japanese\"\n").unwrap();
+
+        assert_eq!(config.locale, Locale::Japanese);
+        assert!(config.encode().unwrap().contains("locale = \"japanese\""));
     }
 
     #[test]
@@ -182,6 +197,7 @@ mod tests {
         };
         let config = DesktopConfig {
             show_diagnostics: false,
+            locale: Locale::English,
             dashboard: Some(dashboard),
         };
 
@@ -196,7 +212,7 @@ mod tests {
         let encoded = DesktopConfig::default().encode().unwrap();
 
         assert!(!encoded.contains("dashboard"));
-        assert_eq!(encoded, "show_diagnostics = false\n");
+        assert_eq!(encoded, "show_diagnostics = false\nlocale = \"english\"\n");
     }
 
     #[test]

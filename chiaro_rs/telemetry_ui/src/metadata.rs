@@ -168,7 +168,7 @@ pub(super) fn format_session_time(value: &SessionScalar) -> String {
         SessionScalar::String(value) => {
             let value = value.trim();
             if value.eq_ignore_ascii_case("unlimited") {
-                return "Unlimited".to_owned();
+                return tr(Text::Unlimited).to_owned();
             }
 
             value
@@ -190,3 +190,4 @@ pub(super) fn format_session_time(value: &SessionScalar) -> String {
             format_recording_duration,
         )
 }
+use chiaro_i18n::{Text, tr};

@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use chiaro_i18n::{Text, tr};
 use iced::{
     Animation, Background, Border, Color, Element, Event, Length, Padding, Rectangle, Shadow, Size,
     Theme, Vector,
@@ -40,11 +41,11 @@ pub enum Kind {
 }
 
 impl Kind {
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Minimize => "Minimize",
-            Self::Maximize => "Maximize",
-            Self::Close => "Close",
+            Self::Minimize => tr(Text::Minimize),
+            Self::Maximize => tr(Text::Maximize),
+            Self::Close => tr(Text::Close),
         }
     }
 

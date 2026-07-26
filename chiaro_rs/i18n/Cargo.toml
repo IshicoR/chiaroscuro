@@ -1,6 +1,6 @@
 [package]
-name = "chiaro_telemetry"
-description = "Telemetry session, lap, comparison, and IBT analysis for Chiaroscuro."
+name = "chiaro_i18n"
+description = "Locale and translation catalog for the Chiaro desktop application."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,8 +12,7 @@ license.workspace = true
 workspace = true
 
 [lib]
-path = "src/telemetry.rs"
+path = "src/i18n.rs"
 
 [dependencies]
-chiaro_i18n = { workspace = true }
-chiaro_irsdk = { workspace = true }
+serde = { workspace = true }
