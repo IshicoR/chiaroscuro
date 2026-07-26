@@ -1,5 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use chiaro_i18n::{
+    Text, failed_to_open, failed_to_read_last_frame, failed_to_read_record, no_telemetry_records,
+    non_finite_record, tr,
+};
 use chiaro_irsdk::{IbtFile, SessionInfo, TelemetryFrame, TelemetrySample};
 
 const BASE_CHART_SAMPLES: usize = 10_000;
@@ -308,7 +312,3 @@ mod tests {
         assert_eq!(chart_sample_limit(4_000, 20), 4_000);
     }
 }
-use chiaro_i18n::{
-    Text, failed_to_open, failed_to_read_last_frame, failed_to_read_record, no_telemetry_records,
-    non_finite_record, tr,
-};
