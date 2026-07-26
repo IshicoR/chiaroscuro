@@ -7,6 +7,7 @@
 
 use std::{borrow::Cow, fmt};
 
+use chiaro_i18n::{Text, tr};
 use iced::{
     Alignment, Background, Border, Color, Element, Event, Length, Padding, Rectangle, Shadow, Size,
     Theme, Vector,
@@ -94,7 +95,7 @@ impl<'a, Message> Dialog<'a, Message> {
             dismiss_on_backdrop: true,
             dismiss_on_escape: true,
             show_close_button: true,
-            close_label: Cow::Borrowed("Close"),
+            close_label: Cow::Borrowed(tr(Text::Close)),
         }
     }
 

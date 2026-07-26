@@ -11,6 +11,7 @@ use super::chart_card::{
     CardTitle, collapse_button,
 };
 use crate::{ButtonSize, ButtonVariant, card, icon_button, surface, typography};
+use chiaro_i18n::{Text, tr};
 use iced_fonts::lucide;
 
 pub fn pane_card<'a, Message: Clone + 'a>(
@@ -85,9 +86,9 @@ fn pane_card_inner<'a, Message: Clone + 'a>(
     let mut actions = row![collapse].spacing(4).align_y(iced::Alignment::Center);
     let title: Element<'_, Message> = if let Some((maximized, on_toggle_maximized)) = maximize {
         let (maximize_icon, maximize_label) = if maximized {
-            (lucide::minimize_two().size(16), "Restore card")
+            (lucide::minimize_two().size(16), tr(Text::RestoreCard))
         } else {
-            (lucide::maximize_two().size(16), "Maximize card")
+            (lucide::maximize_two().size(16), tr(Text::MaximizeCard))
         };
         actions = actions.push(
             icon_button(maximize_icon, maximize_label)

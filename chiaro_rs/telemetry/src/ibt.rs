@@ -1,5 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use chiaro_i18n::{
+    Text, failed_to_open, failed_to_read_last_frame, failed_to_read_record, no_telemetry_records,
+    non_finite_record, tr,
+};
 use chiaro_irsdk::{IbtFile, SessionInfo, TelemetryFrame, TelemetrySample};
 
 const BASE_CHART_SAMPLES: usize = 10_000;
@@ -110,11 +114,11 @@ pub fn load_ibt_source(source: &RecordingSource) -> Result<LoadedIbt, String> {
     let path = source.local_path();
     let file_name = source.display_name().to_owned();
     let file = IbtFile::open(path)
-        .map_err(|error| format!("Failed to open {}: {error}", source.description()))?;
+        .map_err(|error| failed_to_open(&source.description(), &error.to_string()))?;
     let metadata = *file.metadata();
 
     if file.is_empty() {
-        return Err(format!("{file_name} contains no telemetry records"));
+        return Err(no_telemetry_records(&file_name));
     }
     let session_info = file.session_info().clone();
     load_open_ibt(file, metadata, session_info, source.clone(), file_name)
@@ -146,7 +150,7 @@ fn load_open_ibt(
                 .or_else(|| weekend.track_name.clone())
         })
         .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| "Unknown track".to_owned());
+        .unwrap_or_else(|| tr(Text::UnknownTrack).to_owned());
     let track_id = weekend.and_then(|weekend| weekend.track_id);
     let track_config_name = weekend
         .and_then(|weekend| weekend.track_config_name.clone())
@@ -182,17 +186,11 @@ fn load_open_ibt(
     let mut samples = Vec::with_capacity(indices.len());
 
     for index in indices {
-        let sample = file.read_sample(index).map_err(|error| {
-            format!(
-                "Failed to read record {} from {file_name}: {error}",
-                index + 1
-            )
-        })?;
+        let sample = file
+            .read_sample(index)
+            .map_err(|error| failed_to_read_record(index + 1, &file_name, &error.to_string()))?;
         if !sample.is_finite() {
-            return Err(format!(
-                "Record {} in {file_name} contains a non-finite value",
-                index + 1
-            ));
+            return Err(non_finite_record(index + 1, &file_name));
         }
 
         samples.push(TimedSample {
@@ -203,7 +201,7 @@ fn load_open_ibt(
 
     let latest_frame = file
         .read_frame(metadata.record_count - 1)
-        .map_err(|error| format!("Failed to read the last frame from {file_name}: {error}"))?;
+        .map_err(|error| failed_to_read_last_frame(&file_name, &error.to_string()))?;
 
     Ok(LoadedIbt {
         info: IbtInfo {

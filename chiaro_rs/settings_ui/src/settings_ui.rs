@@ -1,14 +1,16 @@
 use chiaro_actions::Action;
+use chiaro_i18n::{Locale, Text, Translations, tr};
 use chiaro_telemetry::{ConnectionStatus, LiveTelemetrySourceInfo, Session};
 use chiaro_widgets::{ButtonVariant, button, callout, dialog, panel, toggler_style, typography};
 use iced::{
     Color, Element,
-    widget::{column, row, text, toggler},
+    widget::{column, pick_list, row, text, toggler},
 };
 
 #[derive(Debug, Clone, Default)]
 pub struct SettingsState {
     show_diagnostics: bool,
+    locale: Locale,
     dialog_preview_open: bool,
 }
 
@@ -21,6 +23,15 @@ impl SettingsState {
         self.show_diagnostics = show_diagnostics;
     }
 
+    pub const fn locale(&self) -> Locale {
+        self.locale
+    }
+
+    pub fn set_locale(&mut self, locale: Locale) {
+        self.locale = locale;
+        chiaro_i18n::set_locale(locale);
+    }
+
     pub fn is_dialog_preview_open(&self) -> bool {
         self.dialog_preview_open
     }
@@ -29,6 +40,7 @@ impl SettingsState {
 #[derive(Debug, Clone, Copy)]
 pub enum SettingsMessage {
     SetDiagnostics(bool),
+    SetLocale(Locale),
     OpenDialogPreview,
     CloseDialogPreview,
     ConfirmDialogPreview,
@@ -36,7 +48,7 @@ pub enum SettingsMessage {
 
 impl SettingsMessage {
     pub const fn persists_configuration(self) -> bool {
-        matches!(self, Self::SetDiagnostics(_))
+        matches!(self, Self::SetDiagnostics(_) | Self::SetLocale(_))
     }
 }
 
@@ -44,6 +56,10 @@ pub fn update(state: &mut SettingsState, message: SettingsMessage) -> Option<Act
     match message {
         SettingsMessage::SetDiagnostics(enabled) => {
             state.show_diagnostics = enabled;
+            None
+        },
+        SettingsMessage::SetLocale(locale) => {
+            state.set_locale(locale);
             None
         },
         SettingsMessage::OpenDialogPreview => {
@@ -63,79 +79,110 @@ pub fn view<'a>(
     config_error: Option<&'a str>,
     live_source: LiveTelemetrySourceInfo,
 ) -> Element<'a, SettingsMessage> {
+    let translations = Translations::new(state.locale);
     let diagnostics_toggle = toggler(state.show_diagnostics)
-        .label("Show diagnostics")
+        .label(translations.get(Text::ShowDiagnostics))
         .size(20)
         .spacing(12)
         .style(toggler_style)
         .on_toggle(SettingsMessage::SetDiagnostics);
     let mut diagnostics = column![
-        text("Diagnostics").size(20).font(typography::SANS_SEMIBOLD),
-        text("Expose live telemetry and recording details for troubleshooting.").size(15),
+        text(translations.get(Text::Diagnostics))
+            .size(20)
+            .font(typography::SANS_SEMIBOLD),
+        text(translations.get(Text::DiagnosticsDescription)).size(15),
         diagnostics_toggle,
     ]
     .spacing(10);
 
     if state.show_diagnostics {
         let connection = if session.ibt_info().is_some() {
-            "IBT recording"
+            translations.get(Text::IbtRecording)
         } else {
             if !live_source.is_available() {
-                "Unavailable on this platform"
+                translations.get(Text::UnavailableOnThisPlatform)
             } else {
                 match session.connection() {
-                    ConnectionStatus::Disconnected => "Disconnected",
-                    ConnectionStatus::Connecting => "Connecting",
-                    ConnectionStatus::Connected => "Connected",
+                    ConnectionStatus::Disconnected => translations.get(Text::Disconnected),
+                    ConnectionStatus::Connecting => translations.get(Text::Connecting),
+                    ConnectionStatus::Connected => translations.get(Text::Connected),
                 }
             }
         };
         let sample_count = session.ibt_info().map_or_else(
-            || format!("Samples received: {}", session.packets_received()),
-            |info| format!("Records: {}", info.record_count),
+            || {
+                format!(
+                    "{}: {}",
+                    tr(Text::SamplesReceived),
+                    session.packets_received()
+                )
+            },
+            |info| format!("{}: {}", tr(Text::Records), info.record_count),
         );
 
         diagnostics = diagnostics
-            .push(text("Runtime").size(16).font(typography::SANS_SEMIBOLD))
+            .push(
+                text(translations.get(Text::Runtime))
+                    .size(16)
+                    .font(typography::SANS_SEMIBOLD),
+            )
             .push(text(format!(
-                "Live source: {} ({})",
+                "{}: {} ({})",
+                tr(Text::LiveSource),
                 live_source.display_name(),
                 live_source.id()
             )))
-            .push(text(format!("Connection: {connection}")))
+            .push(text(format!("{}: {connection}", tr(Text::Connection))))
             .push(text(sample_count))
             .push(text(format!(
-                "Telemetry variables: {}",
+                "{}: {}",
+                tr(Text::TelemetryVariables),
                 session
                     .latest_frame()
                     .map_or(0, chiaro_irsdk::TelemetryFrame::len)
             )));
 
         if let Some(reason) = live_source.unavailable_reason() {
-            diagnostics = diagnostics.push(text(format!("Live source unavailable: {reason}")));
+            diagnostics = diagnostics.push(text(format!(
+                "{}: {reason}",
+                tr(Text::LiveSourceUnavailable)
+            )));
         }
 
         if let Some(info) = session.ibt_info() {
             diagnostics = diagnostics.push(
-                text(format!("IBT source: {}", info.source.description()))
-                    .width(iced::Length::Fill)
-                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+                text(format!(
+                    "{}: {}",
+                    tr(Text::IbtSource),
+                    info.source.description()
+                ))
+                .width(iced::Length::Fill)
+                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
             );
         }
 
         if let Some(info) = session.session_info() {
-            diagnostics =
-                diagnostics.push(text(format!("Session info update: {}", info.update_count)));
+            diagnostics = diagnostics.push(text(format!(
+                "{}: {}",
+                tr(Text::SessionInfoUpdate),
+                info.update_count
+            )));
         }
 
         if let Some(error) = session.last_error() {
-            diagnostics = diagnostics.push(text(format!("Telemetry error: {error}")));
+            diagnostics = diagnostics.push(text(format!("{}: {error}", tr(Text::TelemetryError))));
         }
     }
 
     let mut content = column![
-        text("Settings").size(32).font(typography::SANS_SEMIBOLD),
-        text("Application preferences and diagnostics").size(16),
+        text(translations.get(Text::Settings))
+            .size(32)
+            .font(typography::SANS_SEMIBOLD),
+        text(translations.get(Text::ApplicationPreferences)).size(16),
+        row![
+            text(translations.get(Text::Language)),
+            pick_list(Locale::ALL, Some(state.locale), SettingsMessage::SetLocale)
+        ],
         panel(diagnostics).padding(16).width(iced::Length::Fill),
     ]
     .spacing(16);
@@ -143,7 +190,7 @@ pub fn view<'a>(
     if let Some(error) = config_error {
         content = content.push(
             callout(
-                text(format!("Configuration error: {error}"))
+                text(format!("{}: {error}", tr(Text::ConfigurationError)))
                     .color(Color::from_rgb8(0xFA, 0x4D, 0x56)),
             )
             .padding(12)
@@ -153,11 +200,11 @@ pub fn view<'a>(
 
     let component_preview = panel(
         column![
-            text("Component preview")
+            text(translations.get(Text::ComponentPreview))
                 .size(20)
                 .font(typography::SANS_SEMIBOLD),
-            text("Open the shared modal to verify its layout and dismissal behavior.").size(15),
-            button(text("Open dialog preview"))
+            text(translations.get(Text::ComponentPreviewDescription)).size(15),
+            button(text(translations.get(Text::OpenDialogPreview)))
                 .variant(ButtonVariant::Outline)
                 .on_press(SettingsMessage::OpenDialogPreview),
         ]
@@ -167,10 +214,17 @@ pub fn view<'a>(
     .width(iced::Length::Fill);
     let about = panel(
         column![
-            text("About").size(20).font(typography::SANS_SEMIBOLD),
+            text(translations.get(Text::About))
+                .size(20)
+                .font(typography::SANS_SEMIBOLD),
             text("Chiaroscuro").size(18).font(typography::SANS_SEMIBOLD),
-            text("Desktop telemetry interface").size(15),
-            text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(15),
+            text(translations.get(Text::DesktopTelemetryInterface)).size(15),
+            text(format!(
+                "{} {}",
+                tr(Text::Version),
+                env!("CARGO_PKG_VERSION")
+            ))
+            .size(15),
         ]
         .spacing(6),
     )
@@ -195,27 +249,29 @@ where
     Message: Clone + 'a,
     Map: Fn(SettingsMessage) -> Message + Copy + 'a,
 {
+    let translations = Translations::new(state.locale);
     let body = column![
-        text("The Settings view stays mounted behind this surface."),
-        text("Verify the close icon, Cancel button, Escape key, and backdrop click."),
-        text("Navigation and window controls should remain inactive while the dialog is open."),
+        text(translations.get(Text::DialogPreviewBody)),
+        text(translations.get(Text::DialogPreviewInstructions)),
+        text(translations.get(Text::DialogPreviewNavigation)),
     ]
     .spacing(10);
     let footer = row![
-        button(text("Cancel"))
+        button(text(translations.get(Text::Cancel)))
             .variant(ButtonVariant::Outline)
             .on_press(map(SettingsMessage::CloseDialogPreview)),
-        button(text("Confirm")).on_press(map(SettingsMessage::ConfirmDialogPreview)),
+        button(text(translations.get(Text::Confirm)))
+            .on_press(map(SettingsMessage::ConfirmDialogPreview)),
     ]
     .spacing(8);
 
     dialog(base, body)
         .open(state.is_dialog_preview_open())
-        .title("Dialog preview")
-        .description("A live verification of the shared Chiaro dialog component.")
+        .title(translations.get(Text::DialogPreview))
+        .description(translations.get(Text::DialogPreviewDescription))
         .footer(footer)
         .width(520)
-        .close_label("Close dialog")
+        .close_label(translations.get(Text::CloseDialog))
         .on_close(map(SettingsMessage::CloseDialogPreview))
         .into()
 }

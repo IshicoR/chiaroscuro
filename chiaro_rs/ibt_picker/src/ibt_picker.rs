@@ -1,9 +1,10 @@
+use chiaro_i18n::{Text, tr};
 use chiaro_telemetry::{LoadedIbt, RecordingSource, load_ibt_source};
 
 pub async fn select_file() -> Option<RecordingSource> {
     rfd::AsyncFileDialog::new()
-        .set_title("Open iRacing telemetry")
-        .add_filter("iRacing telemetry", &["ibt"])
+        .set_title(tr(Text::OpenIRacingTelemetry))
+        .add_filter(tr(Text::IRacingTelemetry), &["ibt"])
         .pick_file()
         .await
         .map(|file| RecordingSource::local_file(file.path()))

@@ -15,6 +15,7 @@ workspace = true
 path = "src/live_telemetry.rs"
 
 [dependencies]
+chiaro_i18n = { workspace = true }
 chiaro_irsdk = { workspace = true }
 chiaro_telemetry = { workspace = true }
 iced = { workspace = true }

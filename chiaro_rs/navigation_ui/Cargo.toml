@@ -16,6 +16,7 @@ path = "src/navigation_ui.rs"
 
 [dependencies]
 chiaro_actions = { workspace = true }
+chiaro_i18n = { workspace = true }
 chiaro_widgets = { workspace = true }
 iced = { workspace = true }
 iced_fonts = { workspace = true }

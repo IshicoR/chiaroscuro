@@ -16,6 +16,7 @@ path = "src/settings_ui.rs"
 
 [dependencies]
 chiaro_actions = { workspace = true }
+chiaro_i18n = { workspace = true }
 chiaro_widgets = { workspace = true }
 chiaro_irsdk = { workspace = true }
 chiaro_telemetry = { workspace = true }

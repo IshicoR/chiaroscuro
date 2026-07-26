@@ -16,6 +16,7 @@ path = "src/telemetry_ui.rs"
 
 [dependencies]
 chiaro_actions = { workspace = true }
+chiaro_i18n = { workspace = true }
 chiaro_widgets = { workspace = true }
 chiaro_time_series_chart = { workspace = true }
 chiaro_irsdk = { workspace = true }

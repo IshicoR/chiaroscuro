@@ -15,5 +15,6 @@ workspace = true
 path = "src/widgets.rs"
 
 [dependencies]
+chiaro_i18n = { workspace = true }
 iced = { workspace = true, features = ["advanced"] }
 iced_fonts = { workspace = true }

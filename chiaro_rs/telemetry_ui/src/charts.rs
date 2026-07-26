@@ -1,5 +1,6 @@
 //! Construction and axis specifications for Telemetry charts.
 
+use chiaro_i18n::{Text, tr};
 use chiaro_telemetry::{HISTORY_WINDOW, LAP_DISTANCE_AXIS_MAX};
 use chiaro_time_series_chart::{AxisSpec, LineSeries, TimeSeriesChart, TimeSeriesSpec};
 use iced::Color;
@@ -25,11 +26,11 @@ pub(super) fn build_speed_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let color = Color::from_rgb(0.18, 0.65, 0.95);
     let speed = LineSeries::new(
         placeholder(),
-        "Speed",
+        tr(Text::Speed),
         color,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
-    let reference = reference_line("Reference speed", REFERENCE_AMBER);
+    let reference = reference_line(tr(Text::ReferenceSpeed), REFERENCE_AMBER);
 
     TimeSeriesChart::new(
         TimeSeriesSpec::new(
@@ -45,13 +46,13 @@ pub(super) fn build_speed_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
 pub(super) fn build_pedal_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let throttle = LineSeries::new(
         placeholder(),
-        "Throttle",
+        tr(Text::Throttle),
         THROTTLE_LINE_COLOR,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
     let brake = LineSeries::new(
         placeholder(),
-        "Brake",
+        tr(Text::Brake),
         BRAKE_LINE_COLOR,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -65,8 +66,8 @@ pub(super) fn build_pedal_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
         [
             throttle,
             brake,
-            reference_line("Reference throttle", REFERENCE_CYAN),
-            reference_line("Reference brake", REFERENCE_PINK),
+            reference_line(tr(Text::ReferenceThrottle), REFERENCE_CYAN),
+            reference_line(tr(Text::ReferenceBrake), REFERENCE_PINK),
         ],
         x_axis_link,
     )
@@ -89,7 +90,7 @@ pub(super) fn build_brake_pressure_chart(x_axis_link: AxisLink) -> TimeSeriesCha
 pub(super) fn build_abs_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let abs = LineSeries::new(
         placeholder(),
-        "ABS active",
+        tr(Text::AbsActive),
         STATUS_WARNING,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -109,7 +110,7 @@ pub(super) fn build_abs_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
 pub(super) fn build_steering_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let steering = LineSeries::new(
         placeholder(),
-        "Steering angle",
+        tr(Text::SteeringAngle),
         STEERING_LINE_COLOR,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -122,7 +123,7 @@ pub(super) fn build_steering_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
         ),
         [
             steering,
-            reference_line("Reference steering", REFERENCE_LAVENDER),
+            reference_line(tr(Text::ReferenceSteering), REFERENCE_LAVENDER),
         ],
         x_axis_link,
     )
@@ -131,7 +132,7 @@ pub(super) fn build_steering_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
 pub(super) fn build_steering_torque_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let torque = LineSeries::new(
         placeholder(),
-        "Steering torque",
+        tr(Text::SteeringTorque),
         STEERING_LINE_COLOR,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -144,7 +145,7 @@ pub(super) fn build_steering_torque_chart(x_axis_link: AxisLink) -> TimeSeriesCh
         ),
         [
             torque,
-            reference_line("Reference steering torque", REFERENCE_LAVENDER),
+            reference_line(tr(Text::ReferenceSteeringTorque), REFERENCE_LAVENDER),
         ],
         x_axis_link,
     )
@@ -154,7 +155,7 @@ pub(super) fn build_rpm_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let color = Color::from_rgb(0.92, 0.46, 0.18);
     let rpm = LineSeries::new(
         placeholder(),
-        "RPM",
+        tr(Text::Rpm),
         color,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -165,7 +166,7 @@ pub(super) fn build_rpm_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
             AxisSpec::new("", 0.0, 8_000.0, |value| format!("{value:.0}"))
                 .with_value_formatter(|value| format!("{value:.0} rpm")),
         ),
-        [rpm, reference_line("Reference RPM", REFERENCE_CYAN)],
+        [rpm, reference_line(tr(Text::ReferenceRpm), REFERENCE_CYAN)],
         x_axis_link,
     )
 }
@@ -174,7 +175,7 @@ pub(super) fn build_gear_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let color = Color::from_rgb(0.55, 0.58, 0.65);
     let gear = LineSeries::new(
         placeholder(),
-        "Gear",
+        tr(Text::Gear),
         color,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -186,7 +187,10 @@ pub(super) fn build_gear_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
                 .with_value_formatter(format_gear_axis)
                 .with_tick_count(11),
         ),
-        [gear, reference_line("Reference gear", REFERENCE_AMBER)],
+        [
+            gear,
+            reference_line(tr(Text::ReferenceGear), REFERENCE_AMBER),
+        ],
         x_axis_link,
     )
 }
@@ -196,13 +200,13 @@ pub(super) fn build_dynamics_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let longitudinal_color = Color::from_rgb(0.95, 0.55, 0.18);
     let lateral = LineSeries::new(
         placeholder(),
-        "Lateral G",
+        tr(Text::LateralG),
         lateral_color,
         LineStyle::solid().with_pixel_width(DYNAMICS_LINE_WIDTH),
     );
     let longitudinal = LineSeries::new(
         placeholder(),
-        "Longitudinal G",
+        tr(Text::LongitudinalG),
         longitudinal_color,
         LineStyle::solid().with_pixel_width(DYNAMICS_LINE_WIDTH),
     );
@@ -216,8 +220,8 @@ pub(super) fn build_dynamics_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
         [
             lateral,
             longitudinal,
-            reference_line("Reference lateral G", REFERENCE_LAVENDER),
-            reference_line("Reference longitudinal G", REFERENCE_CYAN),
+            reference_line(tr(Text::ReferenceLateralG), REFERENCE_LAVENDER),
+            reference_line(tr(Text::ReferenceLongitudinalG), REFERENCE_CYAN),
         ],
         x_axis_link,
     )
@@ -227,7 +231,7 @@ pub(super) fn build_yaw_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let color = Color::from_rgb(0.72, 0.34, 0.95);
     let yaw = LineSeries::new(
         placeholder(),
-        "Yaw rate",
+        tr(Text::YawRate),
         color,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -238,7 +242,10 @@ pub(super) fn build_yaw_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
             AxisSpec::new("", -60.0, 60.0, |value| format!("{value:.0}"))
                 .with_value_formatter(|value| format!("{value:+.1}°/s")),
         ),
-        [yaw, reference_line("Reference yaw rate", REFERENCE_AMBER)],
+        [
+            yaw,
+            reference_line(tr(Text::ReferenceYawRate), REFERENCE_AMBER),
+        ],
         x_axis_link,
     )
 }
@@ -292,7 +299,7 @@ pub(super) fn build_fuel_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let color = Color::from_rgb(0.84, 0.65, 0.16);
     let fuel = LineSeries::new(
         placeholder(),
-        "Fuel used",
+        tr(Text::FuelUsed),
         color,
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -303,7 +310,10 @@ pub(super) fn build_fuel_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
             AxisSpec::new("", 0.0, 1.0, |value| format!("{value:.1}"))
                 .with_value_formatter(|value| format!("{value:.3} L")),
         ),
-        [fuel, reference_line("Reference fuel used", REFERENCE_CYAN)],
+        [
+            fuel,
+            reference_line(tr(Text::ReferenceFuelUsed), REFERENCE_CYAN),
+        ],
         x_axis_link,
     )
 }
@@ -311,7 +321,7 @@ pub(super) fn build_fuel_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
 pub(super) fn build_delta_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
     let delta = LineSeries::new(
         placeholder(),
-        "Delta",
+        tr(Text::Delta),
         Color::from_rgb(0.72, 0.34, 0.95),
         LineStyle::solid().with_pixel_width(PRIMARY_LINE_WIDTH),
     );
@@ -328,12 +338,17 @@ pub(super) fn build_delta_chart(x_axis_link: AxisLink) -> TimeSeriesChart {
 }
 
 pub(super) fn time_axis() -> AxisSpec {
-    AxisSpec::new("Time", 0.0, HISTORY_WINDOW.as_secs_f64(), format_chart_time)
+    AxisSpec::new(
+        tr(Text::Time),
+        0.0,
+        HISTORY_WINDOW.as_secs_f64(),
+        format_chart_time,
+    )
 }
 
 pub(super) fn lap_distance_axis() -> AxisSpec {
     AxisSpec::new(
-        "Lap distance",
+        tr(Text::LapDistance),
         0.0,
         LAP_DISTANCE_AXIS_MAX,
         format_lap_distance,
@@ -346,20 +361,20 @@ fn placeholder() -> Vec<[f64; 2]> {
 
 fn wheel_series(style: LineStyle) -> [LineSeries; 4] {
     [
-        ("Front left", Color::from_rgb(0.18, 0.65, 0.95)),
-        ("Front right", Color::from_rgb(0.35, 0.78, 0.65)),
-        ("Rear left", Color::from_rgb(0.95, 0.62, 0.20)),
-        ("Rear right", Color::from_rgb(0.90, 0.32, 0.38)),
+        (tr(Text::FrontLeft), Color::from_rgb(0.18, 0.65, 0.95)),
+        (tr(Text::FrontRight), Color::from_rgb(0.35, 0.78, 0.65)),
+        (tr(Text::RearLeft), Color::from_rgb(0.95, 0.62, 0.20)),
+        (tr(Text::RearRight), Color::from_rgb(0.90, 0.32, 0.38)),
     ]
     .map(|(label, color)| LineSeries::new(placeholder(), label, color, style))
 }
 
 fn reference_wheel_series() -> [LineSeries; 4] {
     [
-        ("Reference front left", REFERENCE_LAVENDER),
-        ("Reference front right", REFERENCE_CYAN),
-        ("Reference rear left", REFERENCE_AMBER),
-        ("Reference rear right", REFERENCE_PINK),
+        (tr(Text::ReferenceFrontLeft), REFERENCE_LAVENDER),
+        (tr(Text::ReferenceFrontRight), REFERENCE_CYAN),
+        (tr(Text::ReferenceRearLeft), REFERENCE_AMBER),
+        (tr(Text::ReferenceRearRight), REFERENCE_PINK),
     ]
     .map(|(label, color)| reference_line(label, color))
 }
@@ -379,8 +394,8 @@ fn format_gear_axis(value: f64) -> String {
 
 fn format_abs_activity(value: f64) -> String {
     if value >= 50.0 {
-        "Active".to_owned()
+        tr(Text::Active).to_owned()
     } else {
-        "Off".to_owned()
+        tr(Text::Off).to_owned()
     }
 }

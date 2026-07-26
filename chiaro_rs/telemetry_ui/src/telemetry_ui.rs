@@ -38,6 +38,7 @@ use readout::{
 use scaling::{maximum_y, padded_y_limits, symmetric_y_limits};
 
 use chiaro_actions::Action;
+use chiaro_i18n::{Text, count_samples, count_turns, tr};
 use chiaro_irsdk::{TelemetrySample, variables};
 use chiaro_telemetry::{
     ConnectionStatus, FocusedTelemetry, HISTORY_WINDOW, LAP_DISTANCE_AXIS_MAX,
@@ -1872,11 +1873,11 @@ fn cars_are_different(session: &Session, reference: &Session) -> bool {
 
 fn comparison_issue(session: &Session, reference: &Session) -> Option<&'static str> {
     if session.ibt_info().is_none() {
-        Some("Main IBT required")
+        Some(tr(Text::MainIbtRequired))
     } else if reference.ibt_info().is_none() {
-        Some("Reference IBT unavailable")
+        Some(tr(Text::ReferenceIbtUnavailable))
     } else if !tracks_are_compatible(session, reference) {
-        Some("Track mismatch")
+        Some(tr(Text::TrackMismatch))
     } else {
         None
     }
@@ -2146,18 +2147,18 @@ fn analysis_panels<'a>(
     let (connection_label, connection_color) = if session.ibt_info().is_some() {
         ("IBT", STATUS_INFO)
     } else if !live_source.is_available() {
-        ("Offline", STATUS_MUTED)
+        (tr(Text::Offline), STATUS_MUTED)
     } else {
         match session.connection() {
-            ConnectionStatus::Disconnected => ("Disconnected", STATUS_MUTED),
-            ConnectionStatus::Connecting => ("Waiting", STATUS_WARNING),
-            ConnectionStatus::Connected => ("Live", STATUS_SUCCESS),
+            ConnectionStatus::Disconnected => (tr(Text::Disconnected), STATUS_MUTED),
+            ConnectionStatus::Connecting => (tr(Text::Waiting), STATUS_WARNING),
+            ConnectionStatus::Connected => (tr(Text::Live), STATUS_SUCCESS),
         }
     };
     let track_name = ibt_info
         .map(|info| info.track_name.as_str())
         .or(metadata.track_name.as_deref())
-        .unwrap_or("Waiting for track data")
+        .unwrap_or(tr(Text::WaitingForTrackData))
         .to_owned();
     let car_name = ibt_info
         .and_then(|info| info.car_name.as_deref())
@@ -2169,7 +2170,7 @@ fn analysis_panels<'a>(
         || {
             metadata.session_time.clone().unwrap_or_else(|| {
                 let samples = session.packets_received();
-                format!("{samples} samples")
+                count_samples(samples)
             })
         },
         |info| format_recording_duration(info.duration_seconds),
@@ -2178,9 +2179,9 @@ fn analysis_panels<'a>(
         .and_then(|info| info.track_config_name.clone())
         .or_else(|| metadata.track_config.clone());
     let track_length = match (metadata.track_length.as_deref(), metadata.track_turns) {
-        (Some(length), Some(turns)) => Some(format!("{length} · {turns} turns")),
+        (Some(length), Some(turns)) => Some(format!("{length} · {}", count_turns(turns))),
         (Some(length), None) => Some(length.to_owned()),
-        (None, Some(turns)) => Some(format!("{turns} turns")),
+        (None, Some(turns)) => Some(count_turns(turns)),
         (None, None) => None,
     };
     let source_detail = if session.ibt_info().is_some() {
@@ -2190,15 +2191,15 @@ fn analysis_panels<'a>(
     } else if live_source.is_available() {
         live_source.display_name().to_owned()
     } else {
-        format!("{} · unavailable", live_source.display_name())
+        format!("{} · {}", live_source.display_name(), tr(Text::Unavailable))
     };
 
     let connection_action = if !live_source.is_available() {
-        "Unavailable"
+        tr(Text::Unavailable)
     } else if session.wants_connection() {
-        "Disconnect"
+        tr(Text::Disconnect)
     } else {
-        "Connect"
+        tr(Text::Connect)
     };
     let connection_button = action_button(connection_action)
         .variant(ButtonVariant::Outline)
@@ -2211,9 +2212,9 @@ fn analysis_panels<'a>(
                 .then_some(TelemetryMessage::ToggleConnection),
         );
     let open_label = match state.ibt_load_state {
-        IbtLoadState::Idle => "Open IBT",
-        IbtLoadState::Selecting => "Selecting...",
-        IbtLoadState::Loading => "Loading...",
+        IbtLoadState::Idle => tr(Text::OpenIbt),
+        IbtLoadState::Selecting => tr(Text::Selecting),
+        IbtLoadState::Loading => tr(Text::Loading),
     };
     let open_button = icon_button(lucide::folder_open().size(17), open_label)
         .variant(ButtonVariant::Outline)
@@ -2225,9 +2226,9 @@ fn analysis_panels<'a>(
             (state.ibt_load_state == IbtLoadState::Idle).then_some(TelemetryMessage::OpenIbt),
         );
     let reference_open_label = match state.reference_ibt_load_state {
-        IbtLoadState::Idle => "Open IBT",
-        IbtLoadState::Selecting => "Selecting...",
-        IbtLoadState::Loading => "Loading...",
+        IbtLoadState::Idle => tr(Text::OpenIbt),
+        IbtLoadState::Selecting => tr(Text::Selecting),
+        IbtLoadState::Loading => tr(Text::Loading),
     };
     let reference_open_button = action_button(
         stack([
@@ -2258,7 +2259,7 @@ fn analysis_panels<'a>(
     );
     let can_clear_reference = state.reference_ibt_load_state == IbtLoadState::Idle
         && (reference_session.is_some() || state.reference_ibt_error.is_some());
-    let clear_reference_button = icon_button(lucide::x().size(16), "Clear reference")
+    let clear_reference_button = icon_button(lucide::x().size(16), tr(Text::ClearReference))
         .variant(ButtonVariant::Outline)
         .size(ButtonSize::Icon)
         .width(Length::Fixed(34.0))
@@ -2268,10 +2269,10 @@ fn analysis_panels<'a>(
     let reference_description = state.reference_ibt_error.as_deref().map_or_else(
         || {
             reference_session.map_or_else(
-                || "No reference loaded".to_owned(),
+                || tr(Text::NoReferenceLoaded).to_owned(),
                 |reference| {
                     reference.ibt_info().map_or_else(
-                        || "Reference IBT unavailable".to_owned(),
+                        || tr(Text::ReferenceIbtUnavailable).to_owned(),
                         |info| {
                             let mut details = vec![info.track_name.as_str()];
                             if let Some(config) = info.track_config_name.as_deref() {
@@ -2286,7 +2287,7 @@ fn analysis_panels<'a>(
                             if let Some(issue) = comparison_issue(session, reference) {
                                 format!("{issue} · {details}")
                             } else if cars_are_different(session, reference) {
-                                format!("Car mismatch · {details}")
+                                format!("{} · {details}", tr(Text::CarMismatch))
                             } else {
                                 details
                             }
@@ -2316,33 +2317,39 @@ fn analysis_panels<'a>(
     )]
     .width(Length::Fill);
     for (label, value) in [
-        ("Car", car_name),
-        ("Class", metadata_value(metadata.car_class.clone())),
-        ("Session", session_type),
-        ("Time", time_label),
-        ("Date", metadata_value(metadata.date_time.clone())),
-        ("Layout", metadata_value(track_config)),
-        ("Length", metadata_value(track_length)),
-        ("Type", metadata_value(metadata.track_type.clone())),
+        (tr(Text::Car), car_name),
+        (tr(Text::Class), metadata_value(metadata.car_class.clone())),
+        (tr(Text::Session), session_type),
+        (tr(Text::Time), time_label),
+        (tr(Text::Date), metadata_value(metadata.date_time.clone())),
+        (tr(Text::Layout), metadata_value(track_config)),
+        (tr(Text::Length), metadata_value(track_length)),
+        (tr(Text::Type), metadata_value(metadata.track_type.clone())),
     ] {
         session_details = session_details.push(metadata_row(label, value, None));
     }
     session_details = session_details
         .push(metadata_row(
-            "Source",
+            tr(Text::Source),
             source_detail,
             Some(connection_color),
         ))
-        .push(setup_section_heading("CONDITIONS"));
+        .push(setup_section_heading(tr(Text::Conditions)));
     for (label, value) in [
-        ("Weather", metadata_value(metadata.weather.clone())),
-        ("Air temp", metadata_value(metadata.air_temperature.clone())),
+        (tr(Text::Weather), metadata_value(metadata.weather.clone())),
         (
-            "Track temp",
+            tr(Text::AirTemperature),
+            metadata_value(metadata.air_temperature.clone()),
+        ),
+        (
+            tr(Text::TrackTemperature),
             metadata_value(metadata.surface_temperature.clone()),
         ),
-        ("Humidity", metadata_value(metadata.humidity.clone())),
-        ("Wind", metadata_value(metadata.wind.clone())),
+        (
+            tr(Text::Humidity),
+            metadata_value(metadata.humidity.clone()),
+        ),
+        (tr(Text::Wind), metadata_value(metadata.wind.clone())),
     ] {
         session_details = session_details.push(metadata_row(label, value, None));
     }
@@ -2391,7 +2398,7 @@ fn analysis_panels<'a>(
         setup_separated_block(
             callout(
                 row![
-                    text("Session laps")
+                    text(tr(Text::SessionLaps))
                         .size(15)
                         .font(typography::SANS_SEMIBOLD)
                         .width(Length::Fill),
@@ -2407,13 +2414,13 @@ fn analysis_panels<'a>(
     .width(Length::Fill);
     let mut charts_content = column![setup_separated_block(
         row![
-            text("Layout")
+            text(tr(Text::Layout))
                 .size(14)
                 .font(typography::SANS_SEMIBOLD)
                 .width(Length::Fill),
             chart_columns_button(ChartColumns::One, state.chart_columns == ChartColumns::One,),
             chart_columns_button(ChartColumns::Two, state.chart_columns == ChartColumns::Two,),
-            icon_button(lucide::rotate_ccw().size(16), "Reset layout")
+            icon_button(lucide::rotate_ccw().size(16), tr(Text::ResetLayout))
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::Icon)
                 .width(Length::Fixed(28.0))
@@ -2506,7 +2513,7 @@ fn lap_analysis_card_content(
             let focused_sample = focused.map(|point| point.sample);
             content
                 .push(cursor_value(
-                    "Time",
+                    tr(Text::Time),
                     focused_sample.map_or_else(
                         || "--:--.---".to_owned(),
                         |sample| format_lap_time(sample.current_lap_ms),
@@ -2514,7 +2521,7 @@ fn lap_analysis_card_content(
                     None,
                 ))
                 .push(cursor_value(
-                    "Lap position",
+                    tr(Text::LapPosition),
                     focused_sample.map_or_else(
                         || "--".to_owned(),
                         |sample| format_track_position(sample.normalized_car_position),
@@ -2527,7 +2534,7 @@ fn lap_analysis_card_content(
             let reference = reference_focused.map(|point| point.sample);
             content
                 .push(cursor_value(
-                    "Time",
+                    tr(Text::Time),
                     reference.map_or_else(
                         || "--:--.---".to_owned(),
                         |sample| format_lap_time(sample.current_lap_ms),
@@ -2535,7 +2542,7 @@ fn lap_analysis_card_content(
                     None,
                 ))
                 .push(cursor_value(
-                    "Speed",
+                    tr(Text::Speed),
                     reference.map_or_else(
                         || "--".to_owned(),
                         |sample| format!("{:.1} km/h", sample.speed_kmh),
@@ -2543,14 +2550,14 @@ fn lap_analysis_card_content(
                     Some(Color::from_rgb(0.18, 0.65, 0.95)),
                 ))
                 .push(input_badge_value(
-                    "Throttle",
+                    tr(Text::Throttle),
                     reference.and_then(|sample| input_pedal_value(sample.throttle)),
                     BadgeVariant::Success,
                     InputMeter::Linear,
                     THROTTLE_LINE_COLOR,
                 ))
                 .push(input_badge_value(
-                    "Brake",
+                    tr(Text::Brake),
                     reference.and_then(|sample| input_pedal_value(sample.brake)),
                     BadgeVariant::Danger,
                     InputMeter::Linear,
@@ -2560,29 +2567,33 @@ fn lap_analysis_card_content(
         },
         LapAnalysisCardId::Vehicle => content
             .push(cursor_value(
-                "Speed",
+                tr(Text::Speed),
                 format!("{:.1} km/h", sample.speed_kmh),
                 Some(Color::from_rgb(0.18, 0.65, 0.95)),
             ))
-            .push(cursor_value("RPM", sample.rpm.max(0).to_string(), None))
-            .push(cursor_value("Gear", format_gear(sample.gear), None))
             .push(cursor_value(
-                "Fuel",
+                tr(Text::Rpm),
+                sample.rpm.max(0).to_string(),
+                None,
+            ))
+            .push(cursor_value(tr(Text::Gear), format_gear(sample.gear), None))
+            .push(cursor_value(
+                tr(Text::Fuel),
                 format!("{:.1} L", sample.fuel_litres),
                 None,
             ))
             .push(cursor_value(
-                "Current lap",
+                tr(Text::CurrentLap),
                 format_lap_time(sample.current_lap_ms),
                 None,
             ))
             .push(cursor_value(
-                "Last lap",
+                tr(Text::LastLap),
                 format_lap_time(sample.last_lap_ms),
                 None,
             ))
             .push(cursor_value(
-                "Position",
+                tr(Text::Position),
                 format_position(sample.position),
                 None,
             ))
@@ -2592,21 +2603,21 @@ fn lap_analysis_card_content(
 
             content
                 .push(input_badge_value(
-                    "Throttle",
+                    tr(Text::Throttle),
                     readout.throttle,
                     BadgeVariant::Success,
                     InputMeter::Linear,
                     THROTTLE_LINE_COLOR,
                 ))
                 .push(input_badge_value(
-                    "Brake",
+                    tr(Text::Brake),
                     readout.brake,
                     BadgeVariant::Danger,
                     InputMeter::Linear,
                     BRAKE_LINE_COLOR,
                 ))
                 .push(input_badge_value(
-                    "Steering",
+                    tr(Text::Steering),
                     readout.steering,
                     BadgeVariant::Primary,
                     InputMeter::Centered,
@@ -2616,17 +2627,17 @@ fn lap_analysis_card_content(
         },
         LapAnalysisCardId::Dynamics => content
             .push(cursor_value(
-                "Lat G",
+                tr(Text::LateralG),
                 format!("{:.2} G", sample.acceleration_g[0]),
                 Some(Color::from_rgb(0.23, 0.55, 0.95)),
             ))
             .push(cursor_value(
-                "Long G",
+                tr(Text::LongitudinalG),
                 format!("{:.2} G", sample.acceleration_g[1]),
                 Some(Color::from_rgb(0.95, 0.55, 0.18)),
             ))
             .push(cursor_value(
-                "Yaw rate",
+                tr(Text::YawRate),
                 format!("{:+.1}°/s", sample.yaw_rate_rad_s.to_degrees()),
                 Some(Color::from_rgb(0.72, 0.34, 0.95)),
             ))
@@ -2639,11 +2650,15 @@ fn lap_analysis_card_content(
                 content
                     .push(cursor_value(
                         label,
-                        format!("{:+.1}% slip", sample.wheel_slip[wheel] * 100.0),
+                        format!(
+                            "{:+.1}% {}",
+                            sample.wheel_slip[wheel] * 100.0,
+                            tr(Text::Slip)
+                        ),
                         None,
                     ))
                     .push(cursor_value(
-                        "Travel",
+                        tr(Text::Travel),
                         format!("{:.1} mm", sample.suspension_travel_m[wheel] * 1_000.0),
                         None,
                     ))
@@ -2898,8 +2913,8 @@ fn chart_columns_button(columns: ChartColumns, active: bool) -> Element<'static,
     }
     .size(16);
     let label = match columns {
-        ChartColumns::One => "Single column",
-        ChartColumns::Two => "Two columns",
+        ChartColumns::One => tr(Text::SingleColumn),
+        ChartColumns::Two => tr(Text::TwoColumns),
     };
 
     icon_toggle_button(icon, label, active)
@@ -2938,7 +2953,7 @@ fn input_badge_value(
                 InputMeter::Centered => badge.centered_progress(value.progress.unwrap_or(0.0)),
             }
         },
-        None => badge("N/A").variant(BadgeVariant::Neutral),
+        None => badge(tr(Text::NotAvailable)).variant(BadgeVariant::Neutral),
     };
 
     analysis_data_row(

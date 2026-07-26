@@ -13,3 +13,6 @@ workspace = true
 
 [lib]
 path = "src/actions.rs"
+
+[dependencies]
+chiaro_i18n = { workspace = true }

@@ -3,6 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use chiaro_i18n::{Text, tr};
 use chiaro_irsdk::{Client, SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot};
 use chiaro_telemetry::LiveTelemetrySourceInfo;
 use iced::{
@@ -19,9 +20,6 @@ const FULL_FRAME_INTERVAL: Duration = Duration::from_secs(1);
 const OUTPUT_BUFFER_CAPACITY: usize = 2;
 const RETRY_DELAY: Duration = Duration::from_secs(2);
 const IRACING_SHARED_MEMORY_ID: &str = "iracing_shared_memory";
-const IRACING_SHARED_MEMORY_NAME: &str = "iRacing on this PC";
-const IRACING_WINDOWS_ONLY_REASON: &str =
-    "Live iRacing telemetry is available only on Windows; IBT recordings remain available.";
 
 /// A selectable live telemetry transport.
 ///
@@ -35,19 +33,19 @@ pub enum LiveTelemetrySource {
 }
 
 impl LiveTelemetrySource {
-    pub const fn info(&self) -> LiveTelemetrySourceInfo {
+    pub fn info(&self) -> LiveTelemetrySourceInfo {
         match self {
             Self::IracingSharedMemory => {
                 if cfg!(target_os = "windows") {
                     LiveTelemetrySourceInfo::available(
                         IRACING_SHARED_MEMORY_ID,
-                        IRACING_SHARED_MEMORY_NAME,
+                        tr(Text::IRacingOnThisPc),
                     )
                 } else {
                     LiveTelemetrySourceInfo::unavailable(
                         IRACING_SHARED_MEMORY_ID,
-                        IRACING_SHARED_MEMORY_NAME,
-                        IRACING_WINDOWS_ONLY_REASON,
+                        tr(Text::IRacingOnThisPc),
+                        tr(Text::LiveWindowsOnly),
                     )
                 }
             },

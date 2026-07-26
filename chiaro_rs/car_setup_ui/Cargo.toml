@@ -15,6 +15,7 @@ workspace = true
 path = "src/car_setup_ui.rs"
 
 [dependencies]
+chiaro_i18n = { workspace = true }
 chiaro_irsdk = { workspace = true }
 chiaro_telemetry = { workspace = true }
 chiaro_widgets = { workspace = true }

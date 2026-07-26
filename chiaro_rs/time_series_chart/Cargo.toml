@@ -15,6 +15,7 @@ workspace = true
 path = "src/time-series-chart.rs"
 
 [dependencies]
+chiaro_i18n = { workspace = true }
 chiaro_widgets = { workspace = true }
 iced = { workspace = true }
 iced_plot = { workspace = true }

@@ -1,6 +1,8 @@
 use std::fmt::{self, Debug};
 
 use chiaro_actions::Action;
+#[cfg(target_os = "windows")]
+use chiaro_i18n::{Text, tr};
 use iced::Subscription;
 #[cfg(target_os = "windows")]
 use iced::futures::{Stream, channel::mpsc};
@@ -39,9 +41,9 @@ impl TrayState {
     pub fn new() -> Result<Self, String> {
         #[cfg(target_os = "windows")]
         {
-            let open = MenuItem::with_id(OPEN_MENU_ID, "Open Chiaroscuro", true, None);
+            let open = MenuItem::with_id(OPEN_MENU_ID, tr(Text::OpenChiaroscuro), true, None);
             let separator = PredefinedMenuItem::separator();
-            let quit = MenuItem::with_id(QUIT_MENU_ID, "Quit", true, None);
+            let quit = MenuItem::with_id(QUIT_MENU_ID, tr(Text::Quit), true, None);
             let menu = Menu::with_items(&[&open, &separator, &quit])
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
             let icon = Icon::from_rgba(icon_rgba()?, TRAY_ICON_SIZE, TRAY_ICON_SIZE)
