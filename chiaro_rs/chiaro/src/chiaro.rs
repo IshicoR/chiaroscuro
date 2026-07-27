@@ -31,6 +31,7 @@ static ALLOC: rpmalloc::RpMalloc = rpmalloc::RpMalloc;
 
 const CONTENT_PADDING: f32 = 24.0;
 const APP_TITLE: &str = "Chiaroscuro";
+const APPLICATION_ID: &str = "io.github.IshicoR.Chiaroscuro";
 const COOL_CARBON_DARK: Palette = Palette {
     background: Color::from_rgb8(0x15, 0x17, 0x1B),
     text: Color::from_rgb8(0xF4, 0xF4, 0xF4),
@@ -41,6 +42,9 @@ const COOL_CARBON_DARK: Palette = Palette {
 };
 
 fn main() -> iced::Result {
+    // Must run before Iced starts: the installed launcher can use this process
+    // for install, update, and restart lifecycle operations.
+    velopack::VelopackApp::build().run();
     Chiaroscuro::run()
 }
 
@@ -80,6 +84,7 @@ impl Chiaroscuro {
     fn run() -> iced::Result {
         iced::application(Chiaroscuro::new, Chiaroscuro::update, Chiaroscuro::view)
             .settings(iced::Settings {
+                id: Some(APPLICATION_ID.to_owned()),
                 default_text_size: 20.0.into(),
                 ..iced::Settings::default()
             })
@@ -145,7 +150,8 @@ impl Chiaroscuro {
     }
 
     fn theme(&self) -> Theme {
-        Theme::custom("Cool Carbon Dark", COOL_CARBON_DARK)
+        // Theme::custom("Cool Carbon Dark", COOL_CARBON_DARK)
+        Theme::TokyoNightStorm
     }
 
     fn subscription(&self) -> Subscription<AppMessage> {

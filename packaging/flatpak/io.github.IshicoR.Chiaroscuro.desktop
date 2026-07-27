@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Chiaroscuro
+Comment=iRacing telemetry viewer
+Exec=chiaro
+Icon=io.github.IshicoR.Chiaroscuro
+StartupWMClass=io.github.IshicoR.Chiaroscuro
+Categories=Utility;Sports;
+Terminal=false

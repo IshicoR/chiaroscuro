@@ -93,7 +93,7 @@ pub enum WindowMessage {
 }
 
 pub fn settings() -> Settings {
-    Settings {
+    let mut settings = Settings {
         size: Size::new(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT),
         min_size: Some(Size::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)),
         resizable: true,
@@ -102,7 +102,14 @@ pub fn settings() -> Settings {
         icon: window_icon(),
         exit_on_close_request: false,
         ..window::Settings::default()
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        settings.platform_specific.application_id = "io.github.IshicoR.Chiaroscuro".to_owned();
     }
+
+    settings
 }
 
 fn window_icon() -> Option<window::Icon> {

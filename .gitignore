@@ -19,6 +19,12 @@
 *.dylib
 *.wasm
 
+# Distribution artifacts and Flatpak's generated Cargo source vendor tree
+/dist/
+/packaging/flatpak/vendor/
+/packaging/flatpak/repo/
+/packaging/flatpak/build/
+
 # Coverage
 *.lcov
 

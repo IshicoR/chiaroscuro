@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.IshicoR.Chiaroscuro</id>
+  <name>Chiaroscuro</name>
+  <summary>iRacing telemetry viewer</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <url type="homepage">https://github.com/IshicoR/chiaroscuro</url>
+  <developer id="io.github.ishicor">
+    <name>Ryuji Ishimi</name>
+  </developer>
+  <launchable type="desktop-id">io.github.IshicoR.Chiaroscuro.desktop</launchable>
+  <provides>
+    <binary>chiaro</binary>
+  </provides>
+  <description>
+    <p>Chiaroscuro is a real-time telemetry viewer for iRacing that visualizes session, lap, tyre, and car setup data from recording files.</p>
+    <p>On Linux, opening IBT recordings is supported; live iRacing shared-memory telemetry requires Windows.</p>
+  </description>
+  <content_rating type="oars-1.1" />
+</component>

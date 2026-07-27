@@ -32,3 +32,4 @@ chiaro_telemetry = { workspace = true }
 iced = { workspace = true }
 iced_fonts = { workspace = true }
 rpmalloc = { workspace = true }
+velopack = "1.2.110-ge826545"
