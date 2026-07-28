@@ -25,7 +25,7 @@ const MIN_WINDOW_WIDTH: f32 = 960.0;
 const MIN_WINDOW_HEIGHT: f32 = 640.0;
 
 /// Spacing between window control buttons (minimize, maximize, close)
-const WINDOW_CONTROL_SPACING: f32 = 6.0;
+const WINDOW_CONTROL_SPACING: f32 = 8.0;
 
 /// Corner radius for the window's rounded corners
 const WINDOW_CORNER_RADIUS: f32 = 10.0;
@@ -40,7 +40,7 @@ const TITLE_BAR_RIGHT_PADDING: f32 = 6.0;
 const TITLE_BAR_HEIGHT: f32 = 40.0;
 
 /// Display size of the title bar logo in pixels
-const TITLE_BAR_LOGO_SIZE: f32 = 24.0;
+const TITLE_BAR_LOGO_SIZE: f32 = 20.0;
 
 /// Pixel dimensions of the title bar logo image
 const TITLE_BAR_LOGO_PIXELS: u32 = 40;

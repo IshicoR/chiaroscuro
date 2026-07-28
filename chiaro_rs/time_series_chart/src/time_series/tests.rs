@@ -159,6 +159,29 @@ fn x_axis_spec_can_switch_without_rebuilding_the_chart() {
 }
 
 #[test]
+fn x_axis_formatter_scale_updates_without_changing_the_axis_label() {
+    let mut chart = test_chart(vec![[0.0, 1.0], [1.0, 2.0]]);
+
+    chart.set_x_axis(
+        AxisSpec::new("Lap distance", 0.0, 10_000.0, |meters| {
+            format!("{meters:.0} m")
+        })
+        .with_formatter_scale(0.42),
+    );
+
+    assert_eq!(chart.axis.x_formatter_scale, 0.42);
+
+    chart.set_x_axis(
+        AxisSpec::new("Lap distance", 0.0, 10_000.0, |meters| {
+            format!("{meters:.0} m")
+        })
+        .with_formatter_scale(0.428),
+    );
+
+    assert_eq!(chart.axis.x_formatter_scale, 0.428);
+}
+
+#[test]
 fn live_x_view_keeps_offline_style_padding_after_the_latest_time() {
     let link = AxisLink::new();
 
@@ -238,6 +261,52 @@ fn tooltips_are_visible_by_default_and_can_be_toggled() {
 
     chart.update(TimeSeriesMessage::ToggleTooltips);
     assert!(chart.tooltips_visible());
+}
+
+#[test]
+fn sector_markers_are_visible_by_default_and_can_be_toggled() {
+    let mut chart = test_chart(vec![[0.0, 1.0], [1.0, 2.0]]);
+    chart.set_markers(&[ChartMarker::new(
+        0.5,
+        "S1",
+        Color::from_rgb(0.75, 0.42, 1.0),
+    )]);
+
+    assert!(chart.markers_visible());
+    assert_eq!(chart.marker_line_overlays().len(), 1);
+    assert_eq!(chart.marker_label_overlays().len(), 1);
+
+    chart.update(TimeSeriesMessage::ToggleMarkers);
+
+    assert!(!chart.markers_visible());
+    assert!(chart.marker_line_overlays().is_empty());
+    assert!(chart.marker_label_overlays().is_empty());
+}
+
+#[test]
+fn sector_ranges_follow_the_shared_sector_visibility() {
+    let mut chart = test_chart(vec![[0.0, 1.0], [1.0, 2.0]]);
+    chart.set_ranges(&[ChartRange::new(
+        0.0,
+        0.5,
+        Color::from_rgba(0.75, 0.42, 1.0, 0.075),
+    )]);
+
+    assert_eq!(chart.ranges.len(), 1);
+    assert!(chart.range_background_overlay().is_some());
+
+    chart.update(TimeSeriesMessage::ToggleMarkers);
+    chart.set_ranges(&[
+        ChartRange::new(0.0, 0.5, Color::from_rgba(0.75, 0.42, 1.0, 0.075)),
+        ChartRange::new(0.5, 1.0, Color::from_rgba(0.95, 0.76, 0.11, 0.055)),
+    ]);
+
+    assert!(chart.range_background_overlay().is_none());
+
+    chart.update(TimeSeriesMessage::ToggleMarkers);
+
+    assert!(chart.markers_visible());
+    assert!(chart.range_background_overlay().is_some());
 }
 
 #[test]
@@ -322,6 +391,32 @@ fn tooltip_action_closes_the_context_menu() {
 
     assert!(!chart.tooltips_visible());
     assert!(!chart.is_context_menu_open());
+}
+
+#[test]
+fn series_action_toggles_visibility_and_keeps_the_context_menu_open() {
+    let mut chart = multi_series_chart();
+    chart.update(TimeSeriesMessage::OpenContextMenu(Point::new(80.0, 60.0)));
+
+    chart.update(TimeSeriesMessage::ToggleSeriesVisibility(1));
+
+    assert!(!chart.series.visible[1]);
+    assert!(chart.is_context_menu_open());
+    assert_eq!(chart.tooltip_values(1).len(), 1);
+
+    chart.update(TimeSeriesMessage::ToggleSeriesVisibility(1));
+
+    assert!(chart.series.visible[1]);
+    assert_eq!(chart.tooltip_values(1).len(), 2);
+}
+
+#[test]
+fn unknown_series_visibility_action_is_ignored() {
+    let mut chart = test_chart(vec![[0.0, 1.0], [1.0, 2.0]]);
+
+    chart.update(TimeSeriesMessage::ToggleSeriesVisibility(usize::MAX));
+
+    assert_eq!(chart.series.visible, vec![true]);
 }
 
 #[test]

@@ -1,17 +1,30 @@
 use iced_plot::{Color, PointId, ShapeId};
 
-use super::TimeSeriesChart;
+use super::{ChartMarker, ChartRange, TimeSeriesChart};
 
 pub(super) struct SeriesState {
     pub(super) ids: Vec<ShapeId>,
     pub(super) labels: Vec<&'static str>,
     pub(super) colors: Vec<Color>,
     pub(super) lengths: Vec<usize>,
+    pub(super) visible: Vec<bool>,
     #[cfg(test)]
     pub(super) update_count: usize,
 }
 
 impl TimeSeriesChart {
+    pub fn set_markers(&mut self, markers: &[ChartMarker]) {
+        if self.markers != markers {
+            self.markers = markers.to_vec();
+        }
+    }
+
+    pub fn set_ranges(&mut self, ranges: &[ChartRange]) {
+        if self.ranges != ranges {
+            self.ranges = ranges.to_vec();
+        }
+    }
+
     pub fn set_series_points(&mut self, index: usize, points: &[[f64; 2]]) {
         if let Some(id) = self.series.ids.get(index) {
             if points.is_empty() && self.series.lengths.get(index) == Some(&0) {

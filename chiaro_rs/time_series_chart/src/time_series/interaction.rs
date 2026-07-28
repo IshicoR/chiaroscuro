@@ -14,6 +14,8 @@ pub enum TimeSeriesMessage {
     OpenContextMenu(Point),
     CloseContextMenu,
     ToggleTooltips,
+    ToggleMarkers,
+    ToggleSeriesVisibility(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +35,7 @@ pub(super) struct InteractionState {
     pub(super) cursor_position: Option<[f64; 2]>,
     pub(super) cursor_dragging: bool,
     pub(super) tooltips_visible: bool,
+    pub(super) markers_visible: bool,
     pub(super) context: Option<ChartContext>,
 }
 
@@ -87,6 +90,22 @@ impl TimeSeriesChart {
                 self.interaction.context = None;
                 None
             },
+            TimeSeriesMessage::ToggleMarkers => {
+                self.interaction.markers_visible = !self.interaction.markers_visible;
+                None
+            },
+            TimeSeriesMessage::ToggleSeriesVisibility(index) => {
+                if let Some((id, visible)) = self
+                    .series
+                    .ids
+                    .get(index)
+                    .zip(self.series.visible.get_mut(index))
+                {
+                    self.plot.update(PlotUiMessage::ToggleSeriesVisibility(*id));
+                    *visible = !*visible;
+                }
+                None
+            },
         }
     }
 
@@ -103,7 +122,16 @@ impl TimeSeriesChart {
         if !self.axis.live_mode {
             self.plot.clear_pick();
             if let Some(point_index) = point_index {
-                for (series_id, series_length) in self.series.ids.iter().zip(&self.series.lengths) {
+                for ((series_id, series_length), visible) in self
+                    .series
+                    .ids
+                    .iter()
+                    .zip(&self.series.lengths)
+                    .zip(&self.series.visible)
+                {
+                    if !visible {
+                        continue;
+                    }
                     if point_index >= *series_length {
                         continue;
                     }
@@ -130,6 +158,11 @@ impl TimeSeriesChart {
     #[doc(hidden)]
     pub const fn tooltips_visible(&self) -> bool {
         self.interaction.tooltips_visible
+    }
+
+    #[doc(hidden)]
+    pub const fn markers_visible(&self) -> bool {
+        self.interaction.markers_visible
     }
 
     #[doc(hidden)]

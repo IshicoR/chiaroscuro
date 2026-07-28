@@ -1,9 +1,7 @@
 use std::fmt;
 
 use iced::{keyboard, mouse};
-use iced_plot::{
-    AxisLink, MarkerStyle, PlotControls, PlotUiMessage, PlotWidget, PlotWidgetBuilder,
-};
+use iced_plot::{AxisLink, MarkerStyle, PlotControls, PlotWidget, PlotWidgetBuilder};
 
 use super::style;
 
@@ -17,11 +15,13 @@ use axis::{AxisState, padded_x_limits, readable_ticks, set_link_view, set_y_link
 use data::SeriesState;
 use interaction::InteractionState;
 pub use interaction::TimeSeriesMessage;
-pub use model::{AxisSpec, LineSeries, TimeSeriesSpec};
+pub use model::{AxisSpec, ChartMarker, ChartRange, LineSeries, TimeSeriesSpec};
 
 pub struct TimeSeriesChart {
     plot: PlotWidget,
     series: SeriesState,
+    markers: Vec<ChartMarker>,
+    ranges: Vec<ChartRange>,
     axis: AxisState,
     interaction: InteractionState,
 }
@@ -47,6 +47,7 @@ impl TimeSeriesChart {
         let x_limits = (x_axis.min, x_axis.max);
         let x_view_limits = padded_x_limits(x_limits);
         let y_limits = (y_axis.min, y_axis.max);
+        let x_formatter_scale = x_axis.formatter_scale;
         set_link_view(
             &x_axis_link,
             x_view_limits,
@@ -75,7 +76,7 @@ impl TimeSeriesChart {
             .with_autoscale_on_updates(false)
             .with_x_label(x_axis.label)
             .with_y_label(y_axis.label)
-            .with_x_tick_formatter(move |tick| (x_axis.formatter)(tick.value))
+            .with_x_tick_formatter(move |tick| (x_axis.formatter)(tick.value * x_formatter_scale))
             .with_y_tick_formatter(move |tick| (y_axis.formatter)(tick.value))
             .with_x_tick_producer(|min, max| readable_ticks(min, max, 7))
             .with_y_tick_producer(move |min, max| readable_ticks(min, max, y_axis.tick_count))
@@ -87,6 +88,7 @@ impl TimeSeriesChart {
             .with_cursor_provider(|_, _| String::new())
             .with_controls(controls)
             .disable_controls_help()
+            .disable_legend()
             .with_style(style::plot)
             .with_pick_highlight_provider(|_, point| {
                 point.marker_style = Some(MarkerStyle::circle(5.0));
@@ -103,10 +105,10 @@ impl TimeSeriesChart {
             builder = builder.add_series(series);
         }
 
-        let mut plot = builder
+        let plot = builder
             .build()
             .expect("time-series chart specification must be valid");
-        plot.update(PlotUiMessage::ToggleLegend);
+        let visible = vec![true; series_ids.len()];
 
         Self {
             plot,
@@ -115,14 +117,18 @@ impl TimeSeriesChart {
                 labels: series_labels,
                 colors: series_colors,
                 lengths: series_lengths,
+                visible,
                 #[cfg(test)]
                 update_count: 0,
             },
+            markers: Vec::new(),
+            ranges: Vec::new(),
             axis: AxisState {
                 value_formatter: y_axis.value_formatter,
                 x_link: x_axis_link,
                 y_link: y_axis_link,
                 x_label: x_axis.label,
+                x_formatter_scale,
                 x_limits,
                 y_limits,
                 live_mode: false,
@@ -132,6 +138,7 @@ impl TimeSeriesChart {
                 cursor_position: None,
                 cursor_dragging: false,
                 tooltips_visible: true,
+                markers_visible: true,
                 context: None,
             },
         }

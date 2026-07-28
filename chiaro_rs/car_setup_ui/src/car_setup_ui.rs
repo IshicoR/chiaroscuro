@@ -5,14 +5,12 @@ mod setup_view;
 use std::collections::BTreeMap;
 
 use chiaro_telemetry::{LiveTelemetrySourceInfo, Session};
-use chiaro_widgets::{
-    CARD_HEADER_HEIGHT, CardTitle, bounds_reporter, card_drag_handle, pane_card_with_maximize,
-};
+use chiaro_widgets::{CardTitle, bounds_reporter, pane_card_with_maximize};
 use iced::{
     Element, Length, Point, Rectangle, Subscription, Vector,
     alignment::Vertical,
     mouse,
-    widget::{Space, column, container, float, row, scrollable},
+    widget::{column, container, float, mouse_area, row, scrollable},
 };
 
 const CONTENT_PADDING: f32 = 24.0;
@@ -46,6 +44,7 @@ pub struct CarSetupState {
     card_collapsed: BTreeMap<String, bool>,
     card_layouts: BTreeMap<String, CardLayout>,
     maximized_card: Option<String>,
+    hovered_card: Option<String>,
     dragging_card: Option<String>,
     drop_target: Option<String>,
     drag_origin: Option<Point>,
@@ -143,6 +142,7 @@ impl CarSetupState {
 pub enum CarSetupMessage {
     ToggleCardCollapsed(String),
     ToggleCardMaximized(String),
+    SetHoveredCard(Option<String>),
     BeginCardDrag(String),
     CardLayoutChanged {
         card: String,
@@ -217,6 +217,7 @@ pub fn update(state: &mut CarSetupState, message: CarSetupMessage) {
             state.card_layouts.clear();
             state.clear_drag();
         },
+        CarSetupMessage::SetHoveredCard(card) => state.hovered_card = card,
         CarSetupMessage::BeginCardDrag(card) => {
             state.clear_drag();
             state.drag_source_bounds = state.card_layouts.get(&card).map(|layout| layout.bounds);
@@ -513,14 +514,13 @@ fn draggable_card<'a>(
     } else {
         mouse::Interaction::Grab
     };
-    let handle: Element<'_, CarSetupMessage> = if maximized {
-        Space::new()
-            .width(Length::Fixed(CARD_HEADER_HEIGHT))
-            .height(Length::Fixed(CARD_HEADER_HEIGHT))
-            .into()
+    let drag = if maximized {
+        None
     } else {
-        card_drag_handle(CarSetupMessage::BeginCardDrag(card.clone()), interaction)
+        Some((CarSetupMessage::BeginCardDrag(card.clone()), interaction))
     };
+    let actions_visible =
+        state.hovered_card.as_ref() == Some(&card) || state.dragging_card.as_ref() == Some(&card);
     let highlighted = state.dragging_card.is_some()
         && (state.dragging_card.as_ref() == Some(&card)
             || state.drop_target.as_ref() == Some(&card));
@@ -535,13 +535,18 @@ fn draggable_card<'a>(
         title,
         state.setup.card_content(session, live_source, &card),
         0.0,
-        handle,
+        drag,
+        actions_visible,
         maximized,
         collapsed,
         CarSetupMessage::ToggleCardMaximized(card.clone()),
         CarSetupMessage::ToggleCardCollapsed(card.clone()),
         highlighted,
     );
+    let card_content: Element<'_, CarSetupMessage> = mouse_area(card_content)
+        .on_enter(CarSetupMessage::SetHoveredCard(Some(card.clone())))
+        .on_exit(CarSetupMessage::SetHoveredCard(None))
+        .into();
     let card_content: Element<'_, CarSetupMessage> = if state.dragging_card.as_ref() == Some(&card)
         && let (Some(origin), Some(cursor)) = (state.drag_origin, state.drag_cursor)
     {

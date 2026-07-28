@@ -1,7 +1,5 @@
 //! Pure text formatting shared by Telemetry charts and panels.
 
-use chiaro_telemetry::LAP_DISTANCE_AXIS_MAX;
-
 pub(super) fn format_gear(gear: i32) -> String {
     match gear {
         -1 => "R".to_owned(),
@@ -19,11 +17,11 @@ pub(super) fn format_position(position: i32) -> String {
     }
 }
 
-pub(super) fn format_track_position(position: f32) -> String {
+pub(super) fn format_track_position(position: f32, track_length_meters: f64) -> String {
     if position < 0.0 {
         "—".to_owned()
     } else {
-        format!("{:.1}%", position.clamp(0.0, 1.0) * 100.0)
+        format_lap_distance(f64::from(position.clamp(0.0, 1.0)) * track_length_meters)
     }
 }
 
@@ -59,12 +57,27 @@ pub(super) fn format_chart_time(seconds: f64) -> String {
     }
 }
 
-pub(super) fn format_lap_distance(chart_position: f64) -> String {
-    let percentage = chart_position / LAP_DISTANCE_AXIS_MAX * 100.0;
-    if percentage == 0.0 {
-        "0%".to_owned()
+pub(super) fn format_lap_distance(meters: f64) -> String {
+    let meters = meters.max(0.0);
+    if meters == 0.0 {
+        "0 m".to_owned()
     } else {
-        format!("{percentage:.0}%")
+        format!("{meters:.0} m")
     }
+}
+
+pub(super) fn parse_track_length_meters(value: &str) -> Option<f64> {
+    let mut parts = value.split_whitespace();
+    let length = parts.next()?.replace(',', ".").parse::<f64>().ok()?;
+    let unit = parts.next()?.to_ascii_lowercase();
+    let meters = match unit.as_str() {
+        "km" => length * 1_000.0,
+        "m" => length,
+        _ => return None,
+    };
+    meters
+        .is_finite()
+        .then_some(meters)
+        .filter(|meters| *meters > 0.0)
 }
 use chiaro_i18n::count_laps;

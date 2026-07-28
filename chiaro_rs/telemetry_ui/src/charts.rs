@@ -346,13 +346,14 @@ pub(super) fn time_axis() -> AxisSpec {
     )
 }
 
-pub(super) fn lap_distance_axis() -> AxisSpec {
+pub(super) fn lap_distance_axis(track_length_meters: f64) -> AxisSpec {
     AxisSpec::new(
         tr(Text::LapDistance),
         0.0,
         LAP_DISTANCE_AXIS_MAX,
         format_lap_distance,
     )
+    .with_formatter_scale(track_length_meters / LAP_DISTANCE_AXIS_MAX)
 }
 
 fn placeholder() -> Vec<[f64; 2]> {

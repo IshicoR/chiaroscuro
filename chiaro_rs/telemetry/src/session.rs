@@ -7,6 +7,7 @@ use std::{
 use chiaro_irsdk::{SessionInfo, TelemetryFrame, TelemetrySample, TelemetrySnapshot};
 
 use crate::ibt::{IbtInfo, LoadedIbt};
+use crate::timing::{self, LapTiming, SectorCrossing, StintTiming, TimingEntry};
 
 pub const HISTORY_WINDOW: Duration = Duration::from_secs(12);
 /// Internal X-axis units for one lap. Basis-point scaling keeps long, flat line
@@ -131,6 +132,12 @@ pub struct Session {
     session_info_revision: u64,
     history: VecDeque<HistoryEntry>,
     laps: Vec<TelemetryLap>,
+    timing_history: Vec<TimingEntry>,
+    lap_timings: Vec<LapTiming>,
+    stints: Vec<StintTiming>,
+    sector_starts: Vec<f64>,
+    sector_crossings: Vec<SectorCrossing>,
+    timing_revision: u64,
     live_started_at: Option<Instant>,
     last_error: Option<String>,
 }
@@ -225,6 +232,26 @@ impl Session {
         &self.laps
     }
 
+    pub fn lap_timings(&self) -> &[LapTiming] {
+        &self.lap_timings
+    }
+
+    pub fn stints(&self) -> &[StintTiming] {
+        &self.stints
+    }
+
+    pub fn sector_starts(&self) -> &[f64] {
+        &self.sector_starts
+    }
+
+    pub fn sector_crossings(&self) -> &[SectorCrossing] {
+        &self.sector_crossings
+    }
+
+    pub const fn timing_revision(&self) -> u64 {
+        self.timing_revision
+    }
+
     pub fn fastest_complete_lap_index(&self) -> Option<usize> {
         self.laps
             .iter()
@@ -307,6 +334,12 @@ impl Session {
         self.replace_session_info(None);
         self.history.clear();
         self.laps.clear();
+        self.timing_history.clear();
+        self.lap_timings.clear();
+        self.stints.clear();
+        self.sector_starts.clear();
+        self.sector_crossings.clear();
+        self.timing_revision = self.timing_revision.wrapping_add(1);
         self.live_started_at = None;
     }
 
@@ -337,6 +370,12 @@ impl Session {
             })
             .collect();
         self.laps = build_laps(&self.history);
+        self.timing_history = self
+            .history
+            .iter()
+            .map(|entry| TimingEntry::new(entry.elapsed_seconds, entry.sample))
+            .collect();
+        self.rebuild_timing();
         self.live_started_at = None;
         self.last_error = None;
         self.source = SessionSource::Ibt(info);
@@ -388,6 +427,26 @@ impl Session {
             elapsed_seconds,
             sample,
         });
+        let should_rebuild_timing = self.timing_history.last().is_none_or(|previous| {
+            previous.completed_laps != sample.completed_laps
+                || previous.in_pit != sample.in_pit
+                || crossed_sector(
+                    previous.normalized_car_position,
+                    sample.normalized_car_position,
+                    &self.sector_starts,
+                )
+        });
+        self.timing_history
+            .push(TimingEntry::new(elapsed_seconds, sample));
+        if should_rebuild_timing {
+            self.rebuild_timing();
+        } else if timing::update_active(
+            &mut self.lap_timings,
+            &mut self.stints,
+            TimingEntry::new(elapsed_seconds, sample),
+        ) {
+            self.timing_revision = self.timing_revision.wrapping_add(1);
+        }
 
         self.trim_live_history(elapsed_seconds);
     }
@@ -444,7 +503,26 @@ impl Session {
 
     fn replace_session_info(&mut self, session_info: Option<SessionInfo>) {
         self.session_info = session_info;
+        let sector_starts = timing::sector_starts(self.session_info.as_ref());
+        if self.sector_starts != sector_starts {
+            self.sector_starts = sector_starts;
+            self.rebuild_timing();
+        }
         self.session_info_revision = self.session_info_revision.wrapping_add(1);
+    }
+
+    fn rebuild_timing(&mut self) {
+        let (laps, stints) = timing::build(&self.timing_history, &self.sector_starts);
+        let sector_crossings = timing::sector_crossings(&self.timing_history, &self.sector_starts);
+        if self.lap_timings != laps
+            || self.stints != stints
+            || self.sector_crossings != sector_crossings
+        {
+            self.lap_timings = laps;
+            self.stints = stints;
+            self.sector_crossings = sector_crossings;
+            self.timing_revision = self.timing_revision.wrapping_add(1);
+        }
     }
 
     pub fn points_in(
@@ -1118,6 +1196,15 @@ fn completed_lap_duration_ms(
 
 fn seconds_to_milliseconds(seconds: f64) -> i32 {
     (seconds * 1_000.0).round().clamp(0.0, f64::from(i32::MAX)) as i32
+}
+
+fn crossed_sector(previous: f32, current: f32, sector_starts: &[f64]) -> bool {
+    let previous = f64::from(previous);
+    let current = f64::from(current);
+    current > previous
+        && sector_starts
+            .iter()
+            .any(|boundary| previous < *boundary && *boundary <= current)
 }
 
 #[cfg(test)]
@@ -1854,6 +1941,37 @@ mod tests {
                 .front()
                 .is_some_and(|entry| entry.elapsed_seconds >= 1.0)
         );
+    }
+
+    #[test]
+    fn live_timing_history_survives_chart_history_trimming() {
+        let started_at = Instant::now();
+        let mut session = Session::default();
+        for (seconds, completed_laps, last_lap_ms) in [(0, 0, 0), (60, 1, 60_000), (120, 2, 60_000)]
+        {
+            session.record_sample_at(
+                started_at + Duration::from_secs(seconds),
+                TelemetrySample {
+                    completed_laps,
+                    current_lap_ms: 0,
+                    last_lap_ms,
+                    normalized_car_position: 0.0,
+                    fuel_litres: 40.0 - seconds as f32 / 30.0,
+                    ..TelemetrySample::default()
+                },
+            );
+        }
+
+        assert_eq!(session.history.len(), 1);
+        assert_eq!(
+            session
+                .lap_timings()
+                .iter()
+                .filter(|lap| lap.is_complete())
+                .count(),
+            2
+        );
+        assert_eq!(session.stints().len(), 1);
     }
 
     #[test]

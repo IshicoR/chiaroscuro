@@ -24,8 +24,9 @@ use iced::{
 };
 use iced_fonts::lucide;
 
-const BUTTON_SIZE: f32 = 24.0;
-const ICON_SIZE: u32 = 12;
+const BUTTON_SIZE: f32 = 28.0;
+const ICON_SIZE: u32 = 14;
+const ICON_TOP_PADDING: f32 = 2.0;
 const CORNER_RADIUS: f32 = 24.0;
 const TOOLTIP_RADIUS: f32 = 6.0;
 const FOCUS_BORDER_WIDTH: f32 = 2.0;
@@ -87,6 +88,7 @@ impl<'a, Message: Clone + 'a> WindowControlButton<Message> {
         }
         .size(ICON_SIZE);
         let content = container(icon)
+            .padding(Padding::ZERO.top(ICON_TOP_PADDING))
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

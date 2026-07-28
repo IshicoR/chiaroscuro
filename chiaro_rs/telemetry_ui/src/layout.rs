@@ -261,7 +261,7 @@ impl SetupCardId {
         match self {
             Self::Session => tr(Text::Session),
             Self::Reference => tr(Text::Reference),
-            Self::Laps => tr(Text::MyLaps),
+            Self::Laps => tr(Text::Timing),
             Self::Charts => tr(Text::Charts),
         }
     }

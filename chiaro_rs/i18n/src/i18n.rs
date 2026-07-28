@@ -98,6 +98,16 @@ catalog! {
     MyLaps => "My laps", "マイラップ";
     Charts => "Charts", "チャート";
     SessionLaps => "Session laps", "セッションラップ";
+    Timing => "Timing", "タイミング";
+    Laps => "Laps", "ラップ";
+    Stint => "Stint", "スティント";
+    Stints => "Stints", "スティント";
+    Sectors => "Sectors", "セクター";
+    Best => "Best", "ベスト";
+    Average => "Average", "平均";
+    Complete => "Complete", "完了";
+    NoSectorData => "No sector timing data", "セクタータイムがありません";
+    NoStintData => "No stint data", "スティントデータがありません";
     Layout => "Layout", "レイアウト";
     ResetLayout => "Reset layout", "レイアウトをリセット";
     Conditions => "CONDITIONS", "コンディション";
@@ -224,6 +234,8 @@ catalog! {
     No => "No", "いいえ";
     HideTooltips => "Hide tooltips", "ツールチップを非表示";
     ShowTooltips => "Show tooltips", "ツールチップを表示";
+    HideSectors => "Hide sectors", "セクター表示を非表示";
+    ShowSectors => "Show sectors", "セクター表示を表示";
     RestoreChart => "Restore chart", "チャートを元に戻す";
     MaximizeChart => "Maximize chart", "チャートを最大化";
     RestoreCard => "Restore card", "カードを元に戻す";

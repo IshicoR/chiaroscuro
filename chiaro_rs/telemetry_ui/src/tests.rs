@@ -11,7 +11,7 @@ use chiaro_telemetry::{
 use chiaro_time_series_chart::TimeSeriesMessage;
 use iced::{Point, Rectangle, Theme, keyboard, mouse, widget::rule};
 
-use super::formatting::{format_chart_time, format_lap_distance};
+use super::formatting::{format_chart_time, format_lap_distance, parse_track_length_meters};
 use super::interaction::select_drop_target;
 use super::metadata::{format_session_time, session_metadata};
 use super::readout::{InputReadout, steering_meter_progress};
@@ -640,11 +640,19 @@ fn formats_recording_times_without_sixty_second_rollover() {
 }
 
 #[test]
-fn formats_lap_distance_axis_units_as_a_percentage() {
-    assert_eq!(format_lap_distance(-0.0), "0%");
-    assert_eq!(format_lap_distance(0.0), "0%");
-    assert_eq!(format_lap_distance(6_200.0), "62%");
-    assert_eq!(format_lap_distance(10_000.0), "100%");
+fn formats_lap_distance_axis_units_as_meters() {
+    assert_eq!(format_lap_distance(-0.0), "0 m");
+    assert_eq!(format_lap_distance(0.0), "0 m");
+    assert_eq!(format_lap_distance(840.0), "840 m");
+    assert_eq!(format_lap_distance(4_200.0), "4200 m");
+}
+
+#[test]
+fn parses_metric_track_lengths_for_the_lap_distance_axis() {
+    assert_eq!(parse_track_length_meters("4.20 km"), Some(4_200.0));
+    assert_eq!(parse_track_length_meters("4200 m"), Some(4_200.0));
+    assert_eq!(parse_track_length_meters("4,28 km"), Some(4_280.0));
+    assert_eq!(parse_track_length_meters("unknown"), None);
 }
 
 #[test]
@@ -655,8 +663,8 @@ fn formats_race_position() {
 
 #[test]
 fn formats_normalized_track_position() {
-    assert_eq!(format_track_position(0.425), "42.5%");
-    assert_eq!(format_track_position(-1.0), "—");
+    assert_eq!(format_track_position(0.425, 4_200.0), "1785 m");
+    assert_eq!(format_track_position(-1.0, 4_200.0), "—");
 }
 
 #[test]
