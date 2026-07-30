@@ -1,11 +1,48 @@
 use iced_plot::{Color, LineStyle, Series};
 
+/// A labeled vertical marker drawn over a time-series plot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartMarker {
+    pub(super) x: f64,
+    pub(super) label: String,
+    pub(super) color: Color,
+}
+
+impl ChartMarker {
+    pub fn new(x: f64, label: impl Into<String>, color: Color) -> Self {
+        Self {
+            x,
+            label: label.into(),
+            color,
+        }
+    }
+}
+
+/// A colored vertical range drawn behind the plot series.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartRange {
+    pub(super) start_x: f64,
+    pub(super) end_x: f64,
+    pub(super) color: Color,
+}
+
+impl ChartRange {
+    pub fn new(start_x: f64, end_x: f64, color: Color) -> Self {
+        Self {
+            start_x,
+            end_x,
+            color,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct AxisSpec {
     pub(super) label: &'static str,
     pub(super) min: f64,
     pub(super) max: f64,
     pub(super) formatter: fn(f64) -> String,
+    pub(super) formatter_scale: f64,
     pub(super) value_formatter: fn(f64) -> String,
     pub(super) tick_count: usize,
 }
@@ -17,6 +54,7 @@ impl AxisSpec {
             min,
             max,
             formatter,
+            formatter_scale: 1.0,
             value_formatter: formatter,
             tick_count: 6,
         }
@@ -24,6 +62,11 @@ impl AxisSpec {
 
     pub const fn with_value_formatter(mut self, formatter: fn(f64) -> String) -> Self {
         self.value_formatter = formatter;
+        self
+    }
+
+    pub const fn with_formatter_scale(mut self, scale: f64) -> Self {
+        self.formatter_scale = scale;
         self
     }
 

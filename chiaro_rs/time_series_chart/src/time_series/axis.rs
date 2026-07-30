@@ -15,6 +15,7 @@ pub(super) struct AxisState {
     pub(super) x_link: AxisLink,
     pub(super) y_link: AxisLink,
     pub(super) x_label: &'static str,
+    pub(super) x_formatter_scale: f64,
     pub(super) x_limits: (f64, f64),
     pub(super) y_limits: (f64, f64),
     pub(super) live_mode: bool,
@@ -22,14 +23,17 @@ pub(super) struct AxisState {
 
 impl TimeSeriesChart {
     pub fn set_x_axis(&mut self, axis: AxisSpec) {
-        if self.axis.x_label == axis.label {
+        if self.axis.x_label == axis.label && self.axis.x_formatter_scale == axis.formatter_scale {
             return;
         }
 
         self.axis.x_label = axis.label;
+        self.axis.x_formatter_scale = axis.formatter_scale;
         self.plot.set_x_axis_label(axis.label);
-        self.plot
-            .set_x_axis_formatter(Arc::new(move |tick| (axis.formatter)(tick.value)));
+        let formatter_scale = axis.formatter_scale;
+        self.plot.set_x_axis_formatter(Arc::new(move |tick| {
+            (axis.formatter)(tick.value * formatter_scale)
+        }));
     }
 
     pub fn set_x_limits(&mut self, min: f64, max: f64) {

@@ -12,9 +12,12 @@ const SEPARATOR_WIDTH: f32 = 1.0;
 const ROW_HEIGHT: f32 = ROW_CONTENT_HEIGHT + SEPARATOR_WIDTH;
 const LIST_BOTTOM_INSET: f32 = 8.0;
 const CELL_HORIZONTAL_INSET: f32 = 8.0;
-const NUMBER_CELL_WIDTH: f32 = 44.0;
+const NUMBER_CELL_HORIZONTAL_INSET: f32 = 4.0;
+const NUMBER_CELL_WIDTH: f32 = 34.0;
 const FUEL_CELL_WIDTH: f32 = 64.0;
 const MARKER_CELL_WIDTH: f32 = 24.0;
+const SCROLLBAR_WIDTH: f32 = 6.0;
+const SCROLLER_WIDTH: f32 = 4.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LapChoice {
@@ -67,7 +70,7 @@ where
         };
 
         let number = container(text(choice.number).size(14).font(typography::MONO))
-            .padding([0.0, CELL_HORIZONTAL_INSET])
+            .padding([0.0, NUMBER_CELL_HORIZONTAL_INSET])
             .width(Length::Fixed(NUMBER_CELL_WIDTH))
             .height(Length::Fill)
             .align_y(Vertical::Center);
@@ -131,7 +134,11 @@ where
     scrollable(laps)
         .width(Length::Fill)
         .height(Length::Fixed(viewport_height(choices.len())))
-        .spacing(4)
+        .direction(iced::widget::scrollable::Direction::Vertical(
+            iced::widget::scrollable::Scrollbar::new()
+                .width(SCROLLBAR_WIDTH)
+                .scroller_width(SCROLLER_WIDTH),
+        ))
         .anchor_bottom()
         .into()
 }

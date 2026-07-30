@@ -15,6 +15,7 @@ pub(crate) const CARD_PADDING: f32 = 10.0;
 pub(crate) const CARD_TITLE_LEFT_PADDING: f32 = 4.0;
 pub(crate) const CARD_CONTENT_SPACING: f32 = 8.0;
 pub const CARD_HEADER_HEIGHT: f32 = 28.0;
+const CHART_HEADER_HEIGHT: f32 = 24.0;
 pub(crate) const CARD_CONTENT_EDGE_INSET: f32 = 4.0;
 pub(crate) const CARD_HEADER_HORIZONTAL_INSET: f32 = CARD_PADDING - CARD_CONTENT_EDGE_INSET;
 pub(crate) const CARD_TITLE_SPACING: f32 = 7.0;
@@ -79,7 +80,8 @@ impl<'a, Message: 'a> CardTitle<'a, Message> {
 pub fn chart_card<'a, Message: Clone + 'a>(
     title: CardTitle<'a, Message>,
     chart: impl Into<Element<'a, Message>>,
-    header_action: impl Into<Element<'a, Message>>,
+    drag: Option<(Message, mouse::Interaction)>,
+    actions_visible: bool,
     maximized: bool,
     collapsed: bool,
     on_toggle_maximize: Message,
@@ -92,11 +94,7 @@ pub fn chart_card<'a, Message: Clone + 'a>(
     } else {
         (lucide::maximize_two().size(16), tr(Text::MaximizeChart))
     };
-    let maximize = icon_button(maximize_icon, maximize_label)
-        .variant(ButtonVariant::Ghost)
-        .size(ButtonSize::IconSmall)
-        .on_press(on_toggle_maximize.clone());
-    let collapse = collapse_button(title.label(), collapsed, on_toggle_collapsed);
+    let title_label = title.label().to_owned();
     let (label, icon, trailing) = title.into_parts();
     let mut title_content = row![icon, text(label).size(16).font(typography::SANS_SEMIBOLD)]
         .spacing(CARD_TITLE_SPACING)
@@ -105,32 +103,42 @@ pub fn chart_card<'a, Message: Clone + 'a>(
         title_content = title_content.push(trailing);
     }
 
-    let header = container(
-        row![
-            mouse_area(
-                container(title_content,)
-                    .padding(iced::Padding::default().left(CARD_TITLE_LEFT_PADDING))
-                    .width(Fill)
-                    .height(Fill)
-                    .align_y(iced::alignment::Vertical::Center),
-            )
-            .on_double_click(on_toggle_maximize)
-            .interaction(mouse::Interaction::Pointer),
-            collapse,
-            maximize,
-            header_action.into(),
-        ]
+    let title = container(title_content)
+        .padding(iced::Padding::default().left(CARD_TITLE_LEFT_PADDING))
+        .width(Fill)
+        .height(Fill)
+        .align_y(iced::alignment::Vertical::Center);
+    let mut header_content = row![title]
         .spacing(4)
         .width(Fill)
-        .height(Fixed(CARD_HEADER_HEIGHT))
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding {
-        left: CARD_HEADER_HORIZONTAL_INSET,
-        right: CARD_HEADER_HORIZONTAL_INSET,
-        ..Padding::ZERO
-    })
-    .width(Fill);
+        .height(Fixed(CHART_HEADER_HEIGHT))
+        .align_y(iced::Alignment::Center);
+    if actions_visible {
+        header_content = header_content
+            .push(collapse_button(
+                &title_label,
+                collapsed,
+                on_toggle_collapsed,
+                ButtonSize::IconExtraSmall,
+            ))
+            .push(
+                icon_button(maximize_icon, maximize_label)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconExtraSmall)
+                    .on_press(on_toggle_maximize.clone()),
+            );
+    }
+    let mut header = mouse_area(header_content).on_double_click(on_toggle_maximize);
+    if let Some((on_press, interaction)) = drag {
+        header = header.on_press(on_press).interaction(interaction);
+    }
+    let header = container(header)
+        .padding(Padding {
+            left: CARD_HEADER_HORIZONTAL_INSET,
+            right: CARD_HEADER_HORIZONTAL_INSET,
+            ..Padding::ZERO
+        })
+        .width(Fill);
     let mut content = column![header].width(Fill);
     if !collapsed {
         content = content
@@ -160,6 +168,7 @@ pub(crate) fn collapse_button<'a, Message: Clone + 'a>(
     title: &str,
     collapsed: bool,
     on_toggle: Message,
+    size: ButtonSize,
 ) -> Element<'a, Message> {
     let icon = if collapsed {
         lucide::chevron_down().size(16)
@@ -169,7 +178,7 @@ pub(crate) fn collapse_button<'a, Message: Clone + 'a>(
 
     icon_button(icon, collapse_accessibility_label(title, collapsed))
         .variant(ButtonVariant::Ghost)
-        .size(ButtonSize::IconSmall)
+        .size(size)
         .on_press(on_toggle)
         .into()
 }
@@ -231,7 +240,8 @@ mod tests {
         let card = chart_card(
             CardTitle::new("Speed", lucide::gauge().size(16)),
             TrackedContent(converted.clone()),
-            Space::new(),
+            None,
+            true,
             false,
             true,
             (),
@@ -250,7 +260,8 @@ mod tests {
         let card = chart_card(
             CardTitle::new("Speed", lucide::gauge().size(16)),
             TrackedContent(converted.clone()),
-            Space::new(),
+            None,
+            true,
             false,
             false,
             (),

@@ -10,6 +10,8 @@ mod readout;
 mod scaling;
 mod tyre_status;
 
+use std::borrow::Cow;
+
 pub use interaction::subscription;
 pub use layout::{
     ChartColumns, ChartId, LapAnalysisCardId, SetupCardId, TelemetryLayout, TelemetryLayoutFlag,
@@ -23,7 +25,7 @@ use charts::{
 };
 use formatting::{
     format_gear, format_lap_count, format_position, format_recording_duration,
-    format_track_position,
+    format_track_position, parse_track_length_meters,
 };
 use interaction::{
     move_item_to, update_chart_drop_target, update_chart_list_drop_target,
@@ -41,20 +43,23 @@ use chiaro_actions::Action;
 use chiaro_i18n::{Text, count_samples, count_turns, tr};
 use chiaro_irsdk::{TelemetrySample, variables};
 use chiaro_telemetry::{
-    ConnectionStatus, FocusedTelemetry, HISTORY_WINDOW, LAP_DISTANCE_AXIS_MAX,
-    LiveTelemetrySourceInfo, Session,
+    ConnectionStatus, FocusedTelemetry, HISTORY_WINDOW, LAP_DISTANCE_AXIS_MAX, LapTiming,
+    LiveTelemetrySourceInfo, Session, StintTiming,
 };
-use chiaro_time_series_chart::{TimeSeriesChart, TimeSeriesMessage};
+use chiaro_time_series_chart::{ChartMarker, ChartRange, TimeSeriesChart, TimeSeriesMessage};
 use chiaro_widgets::{
-    BadgeVariant, ButtonSize, ButtonVariant, CARD_HEADER_HEIGHT, CardTitle, badge, bounds_reporter,
+    BadgeVariant, ButtonSize, ButtonVariant, CardTitle, badge, bounds_reporter,
     button as action_button, callout, card_drag_handle, chart_card, checkbox_style, icon_button,
     icon_toggle_button, pane_card, typography,
 };
 use iced::{
-    Color, Element, Length, Point, Rectangle, Vector,
+    Background, Border, Color, Element, Length, Point, Rectangle, Vector,
     alignment::{Horizontal, Vertical},
     keyboard, mouse,
-    widget::{Space, checkbox, column, container, float, grid, row, rule, scrollable, stack, text},
+    widget::{
+        Space, checkbox, column, container, float, grid, mouse_area, row, rule, scrollable, stack,
+        text,
+    },
 };
 use iced_fonts::lucide;
 use iced_plot::AxisLink;
@@ -77,6 +82,7 @@ const STATUS_MUTED: Color = Color::from_rgb(0.55, 0.55, 0.55);
 const STATUS_WARNING: Color = Color::from_rgb(0.95, 0.76, 0.11);
 const STATUS_SUCCESS: Color = Color::from_rgb(0.26, 0.75, 0.40);
 const STATUS_ERROR: Color = Color::from_rgb(0.98, 0.30, 0.34);
+const STATUS_FASTEST: Color = Color::from_rgb(0.75, 0.42, 1.0);
 const TEXT_SECONDARY: Color = Color::from_rgb(0.78, 0.78, 0.78);
 const THROTTLE_LINE_COLOR: Color = Color::from_rgb(0.12, 0.72, 0.38);
 const BRAKE_LINE_COLOR: Color = Color::from_rgb(0.90, 0.24, 0.24);
@@ -88,6 +94,13 @@ enum IbtLoadState {
     Idle,
     Selecting,
     Loading,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TimingView {
+    #[default]
+    Laps,
+    Stints,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -139,6 +152,9 @@ pub struct TelemetryState {
     reference_ibt_error: Option<String>,
     lap_choices: Vec<LapChoice>,
     selected_lap_index: Option<usize>,
+    selected_timing_lap_index: Option<usize>,
+    rendered_timing_revision: u64,
+    timing_view: TimingView,
     reference_lap_choices: Vec<LapChoice>,
     selected_reference_lap_index: Option<usize>,
     cached_session_info_revision: Option<u64>,
@@ -157,6 +173,7 @@ pub struct TelemetryState {
     chart_list_layout_generation: u64,
     chart_columns: ChartColumns,
     maximized_chart: Option<ChartId>,
+    hovered_chart: Option<ChartId>,
     dragging_chart: Option<ChartId>,
     drop_target: Option<ChartId>,
     drag_origin: Option<Point>,
@@ -170,6 +187,7 @@ pub struct TelemetryState {
     lap_analysis_order: Vec<LapAnalysisCardId>,
     lap_analysis_collapsed: [bool; LapAnalysisCardId::COUNT],
     lap_analysis_layouts: [Option<CardLayout>; LapAnalysisCardId::COUNT],
+    hovered_lap_analysis_card: Option<LapAnalysisCardId>,
     dragging_lap_analysis_card: Option<LapAnalysisCardId>,
     lap_analysis_drop_target: Option<LapAnalysisCardId>,
     lap_analysis_drag_origin: Option<Point>,
@@ -178,6 +196,7 @@ pub struct TelemetryState {
     setup_card_order: Vec<SetupCardId>,
     setup_card_collapsed: [bool; SetupCardId::COUNT],
     setup_card_layouts: [Option<CardLayout>; SetupCardId::COUNT],
+    hovered_setup_card: Option<SetupCardId>,
     dragging_setup_card: Option<SetupCardId>,
     setup_card_drop_target: Option<SetupCardId>,
     setup_card_drag_origin: Option<Point>,
@@ -212,6 +231,9 @@ impl Default for TelemetryState {
             reference_ibt_error: None,
             lap_choices: Vec::new(),
             selected_lap_index: None,
+            selected_timing_lap_index: None,
+            rendered_timing_revision: 0,
+            timing_view: TimingView::Laps,
             reference_lap_choices: Vec::new(),
             selected_reference_lap_index: None,
             cached_session_info_revision: None,
@@ -230,6 +252,7 @@ impl Default for TelemetryState {
             chart_list_layout_generation: 0,
             chart_columns: ChartColumns::One,
             maximized_chart: None,
+            hovered_chart: None,
             dragging_chart: None,
             drop_target: None,
             drag_origin: None,
@@ -243,6 +266,7 @@ impl Default for TelemetryState {
             lap_analysis_order: LapAnalysisCardId::ALL.to_vec(),
             lap_analysis_collapsed: [false; LapAnalysisCardId::COUNT],
             lap_analysis_layouts: [None; LapAnalysisCardId::COUNT],
+            hovered_lap_analysis_card: None,
             dragging_lap_analysis_card: None,
             lap_analysis_drop_target: None,
             lap_analysis_drag_origin: None,
@@ -251,6 +275,7 @@ impl Default for TelemetryState {
             setup_card_order: SetupCardId::ALL.to_vec(),
             setup_card_collapsed: [false; SetupCardId::COUNT],
             setup_card_layouts: [None; SetupCardId::COUNT],
+            hovered_setup_card: None,
             dragging_setup_card: None,
             setup_card_drop_target: None,
             setup_card_drag_origin: None,
@@ -498,6 +523,7 @@ pub enum TelemetryMessage {
     OpenReferenceIbt,
     ClearReferenceIbt,
     SelectLap(usize),
+    SetTimingView(TimingView),
     SelectReferenceLap(usize),
     SpeedPlot(TimeSeriesMessage),
     PedalPlot(TimeSeriesMessage),
@@ -516,6 +542,7 @@ pub enum TelemetryMessage {
     DeltaPlot(TimeSeriesMessage),
     ToggleChart(ChartId, bool),
     ToggleChartCollapsed(ChartId),
+    SetHoveredChart(Option<ChartId>),
     BeginChartDrag(ChartId),
     ChartLayoutChanged {
         chart: ChartId,
@@ -529,6 +556,7 @@ pub enum TelemetryMessage {
         visible_bounds: Option<Rectangle>,
     },
     ToggleLapAnalysisCardCollapsed(LapAnalysisCardId),
+    SetHoveredLapAnalysisCard(Option<LapAnalysisCardId>),
     BeginLapAnalysisDrag(LapAnalysisCardId),
     LapAnalysisLayoutChanged {
         card: LapAnalysisCardId,
@@ -536,6 +564,7 @@ pub enum TelemetryMessage {
         visible_bounds: Option<Rectangle>,
     },
     ToggleSetupCardCollapsed(SetupCardId),
+    SetHoveredSetupCard(Option<SetupCardId>),
     BeginSetupCardDrag(SetupCardId),
     SetupCardLayoutChanged {
         card: SetupCardId,
@@ -626,6 +655,7 @@ pub fn deactivate(state: &mut TelemetryState) {
 /// Synchronizes the visible Telemetry screen with the latest session data.
 pub fn refresh(state: &mut TelemetryState, session: &Session, reference_session: Option<&Session>) {
     sync_session_metadata(state, session);
+    sync_timing_choices(state, session);
     if !state.is_dragging_card() && telemetry_sync_is_pending(state, session) {
         let scope = if session.ibt_info().is_none() {
             TelemetrySyncScope::LiveVisible
@@ -650,12 +680,19 @@ pub fn update(
         TelemetryMessage::OpenReferenceIbt => Some(Action::OpenReferenceIbt),
         TelemetryMessage::ClearReferenceIbt => Some(Action::ClearReferenceIbt),
         TelemetryMessage::SelectLap(index) => {
-            if index < session.laps().len() {
-                state.selected_lap_index = Some(index);
+            if index < session.lap_timings().len() {
+                state.selected_timing_lap_index = Some(index);
+                if session.ibt_info().is_some() && index < session.laps().len() {
+                    state.selected_lap_index = Some(index);
+                }
                 state.focus_x = None;
                 state.focus_from_cursor = false;
                 sync_telemetry(state, session, reference_session);
             }
+            None
+        },
+        TelemetryMessage::SetTimingView(view) => {
+            state.timing_view = view;
             None
         },
         TelemetryMessage::SelectReferenceLap(index) => {
@@ -786,6 +823,10 @@ pub fn update(
             state.mark_layout_changed();
             None
         },
+        TelemetryMessage::SetHoveredChart(chart) => {
+            state.hovered_chart = chart;
+            None
+        },
         TelemetryMessage::BeginChartDrag(chart) => {
             state.clear_chart_list_drag();
             state.clear_lap_analysis_drag();
@@ -853,6 +894,10 @@ pub fn update(
             state.mark_layout_changed();
             None
         },
+        TelemetryMessage::SetHoveredLapAnalysisCard(card) => {
+            state.hovered_lap_analysis_card = card;
+            None
+        },
         TelemetryMessage::BeginLapAnalysisDrag(card) => {
             state.clear_chart_drag();
             state.clear_chart_list_drag();
@@ -891,6 +936,10 @@ pub fn update(
             state.clear_lap_analysis_drag();
             state.clear_setup_card_drag();
             state.mark_layout_changed();
+            None
+        },
+        TelemetryMessage::SetHoveredSetupCard(card) => {
+            state.hovered_setup_card = card;
             None
         },
         TelemetryMessage::BeginSetupCardDrag(card) => {
@@ -1150,7 +1199,13 @@ fn sync_telemetry_with_scope(
     let chart_duration = session.chart_duration_seconds_for(lap_index);
     let live_bounds = session.live_chart_time_bounds();
     let x_axis = if uses_lap_distance {
-        lap_distance_axis()
+        let track_length_meters = state
+            .session_metadata
+            .track_length
+            .as_deref()
+            .and_then(parse_track_length_meters)
+            .unwrap_or(LAP_DISTANCE_AXIS_MAX);
+        lap_distance_axis(track_length_meters)
     } else {
         time_axis()
     };
@@ -1684,12 +1739,16 @@ fn sync_telemetry_with_scope(
         }
     }
 
+    let (sector_markers, sector_ranges) =
+        chart_sector_overlays(state, session, uses_lap_distance, chart_min, chart_max);
     let live_follow = state.live_follow;
     for chart_id in ChartId::ALL {
         if !syncs(chart_id) {
             continue;
         }
         let chart = state.chart_mut(chart_id);
+        chart.set_markers(&sector_markers);
+        chart.set_ranges(&sector_ranges);
         chart.set_x_axis(x_axis);
         if is_live {
             chart.set_live_x_limits(
@@ -1737,6 +1796,145 @@ fn chart_uses_lap_distance(state: &TelemetryState, session: &Session) -> bool {
     session.ibt_info().is_some() && state.selected_lap_index.is_some()
 }
 
+fn chart_sector_overlays(
+    state: &TelemetryState,
+    session: &Session,
+    uses_lap_distance: bool,
+    chart_min: f64,
+    chart_max: f64,
+) -> (Vec<ChartMarker>, Vec<ChartRange>) {
+    if session.sector_starts().is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    if uses_lap_distance {
+        let Some(lap) = state
+            .selected_timing_lap_index
+            .and_then(|index| session.lap_timings().get(index))
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let sector_starts = session.sector_starts();
+        let mut markers = sector_starts
+            .iter()
+            .copied()
+            .filter(|start| *start > 0.001)
+            .enumerate()
+            .map(|(sector_index, start)| {
+                ChartMarker::new(
+                    start * LAP_DISTANCE_AXIS_MAX,
+                    format!("S{}", sector_index + 1),
+                    sector_timing_color(session.lap_timings(), lap.number(), sector_index),
+                )
+            })
+            .collect::<Vec<_>>();
+        let final_sector_index = sector_starts.len().saturating_sub(1);
+        markers.push(ChartMarker::new(
+            LAP_DISTANCE_AXIS_MAX,
+            format!("S{}", final_sector_index + 1),
+            sector_timing_color(session.lap_timings(), lap.number(), final_sector_index),
+        ));
+        let ranges = sector_starts
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(sector_index, start)| {
+                let end = sector_starts.get(sector_index + 1).copied().unwrap_or(1.0);
+                (end > start).then(|| {
+                    let color =
+                        sector_timing_color(session.lap_timings(), lap.number(), sector_index);
+                    ChartRange::new(
+                        start * LAP_DISTANCE_AXIS_MAX,
+                        end * LAP_DISTANCE_AXIS_MAX,
+                        sector_background_color(color),
+                    )
+                })
+            })
+            .collect();
+        return (markers, ranges);
+    }
+
+    let crossings = session.sector_crossings().to_vec();
+    let markers = crossings
+        .iter()
+        .copied()
+        .filter(|crossing| (chart_min..=chart_max).contains(&crossing.elapsed_seconds()))
+        .map(|crossing| {
+            let color = sector_timing_color(
+                session.lap_timings(),
+                crossing.lap_number(),
+                crossing.sector_index(),
+            );
+            ChartMarker::new(
+                crossing.elapsed_seconds(),
+                format!("S{}", crossing.sector_index() + 1),
+                color,
+            )
+        })
+        .collect();
+    let mut ranges = Vec::new();
+    let mut previous_end = chart_min;
+    for crossing in crossings
+        .iter()
+        .copied()
+        .filter(|crossing| crossing.elapsed_seconds() >= chart_min)
+        .take_while(|crossing| crossing.elapsed_seconds() <= chart_max)
+    {
+        let end = crossing.elapsed_seconds();
+        if end > previous_end {
+            let color = sector_timing_color(
+                session.lap_timings(),
+                crossing.lap_number(),
+                crossing.sector_index(),
+            );
+            ranges.push(ChartRange::new(
+                previous_end,
+                end,
+                sector_background_color(color),
+            ));
+        }
+        previous_end = end;
+    }
+    if chart_max > previous_end {
+        ranges.push(ChartRange::new(
+            previous_end,
+            chart_max,
+            sector_background_color(STATUS_MUTED),
+        ));
+    }
+
+    (markers, ranges)
+}
+
+fn sector_timing_color(laps: &[LapTiming], lap_number: i32, sector_index: usize) -> Color {
+    let duration = laps
+        .iter()
+        .rev()
+        .find(|lap| lap.number() == lap_number)
+        .and_then(|lap| lap.sectors_ms().get(sector_index).copied().flatten());
+    let fastest = laps
+        .iter()
+        .filter_map(|lap| lap.sectors_ms().get(sector_index).copied().flatten())
+        .min();
+
+    match duration {
+        Some(duration) if Some(duration) == fastest => STATUS_FASTEST,
+        Some(_) => STATUS_WARNING,
+        None => STATUS_MUTED,
+    }
+}
+
+fn sector_background_color(color: Color) -> Color {
+    let alpha = if color == STATUS_FASTEST {
+        0.075
+    } else if color == STATUS_WARNING {
+        0.055
+    } else {
+        0.035
+    };
+    Color { a: alpha, ..color }
+}
+
 pub fn reset_session(
     state: &mut TelemetryState,
     session: &Session,
@@ -1746,21 +1944,22 @@ pub fn reset_session(
     state.cached_session_info_revision = None;
     state.session_metadata = SessionMetadata::default();
     state.lap_choices = session
-        .laps()
+        .lap_timings()
         .iter()
-        .copied()
         .enumerate()
         .map(|(index, lap)| {
             LapChoice::new(
                 index,
                 lap.number(),
                 lap.duration_ms(),
-                session.lap_start_fuel_litres(index),
+                lap.start_fuel_litres(),
                 lap.is_complete(),
             )
         })
         .collect();
     state.selected_lap_index = session.preferred_lap_index();
+    state.selected_timing_lap_index = session.lap_timings().len().checked_sub(1);
+    state.rendered_timing_revision = session.timing_revision();
     state.focus_x = None;
     state.focused = None;
     state.focus_from_cursor = false;
@@ -1770,6 +1969,35 @@ pub fn reset_session(
     } else {
         sync_session_metadata(state, session);
     }
+}
+
+fn sync_timing_choices(state: &mut TelemetryState, session: &Session) {
+    if state.rendered_timing_revision == session.timing_revision() {
+        return;
+    }
+    let followed_latest = state.selected_timing_lap_index == state.lap_choices.len().checked_sub(1);
+    state.lap_choices = session
+        .lap_timings()
+        .iter()
+        .enumerate()
+        .map(|(index, lap)| {
+            LapChoice::new(
+                index,
+                lap.number(),
+                lap.duration_ms(),
+                lap.start_fuel_litres(),
+                lap.is_complete(),
+            )
+        })
+        .collect();
+    if followed_latest
+        || state
+            .selected_timing_lap_index
+            .is_none_or(|index| index >= state.lap_choices.len())
+    {
+        state.selected_timing_lap_index = state.lap_choices.len().checked_sub(1);
+    }
+    state.rendered_timing_revision = session.timing_revision();
 }
 
 pub fn reset_reference(
@@ -2060,21 +2288,20 @@ fn draggable_chart<'a>(
     } else {
         mouse::Interaction::Grab
     };
-    let handle: Element<'_, TelemetryMessage> = if maximized {
-        Space::new()
-            .width(Length::Fixed(CARD_HEADER_HEIGHT))
-            .height(Length::Fixed(CARD_HEADER_HEIGHT))
-            .into()
+    let drag = if maximized {
+        None
     } else {
-        card_drag_handle(TelemetryMessage::BeginChartDrag(chart), interaction)
+        Some((TelemetryMessage::BeginChartDrag(chart), interaction))
     };
+    let actions_visible = state.hovered_chart == Some(chart) || state.dragging_chart == Some(chart);
     let highlighted = state.dragging_chart.is_some()
         && state.dragging_chart != Some(chart)
         && state.drop_target == Some(chart);
     let card = chart_card(
         CardTitle::new(chart.title(), chart.icon()),
         content,
-        handle,
+        drag,
+        actions_visible,
         maximized,
         state.chart_collapsed[chart.index()],
         TelemetryMessage::ToggleChartMaximized(chart),
@@ -2082,7 +2309,11 @@ fn draggable_chart<'a>(
         highlighted || state.dragging_chart == Some(chart),
         0.0,
     );
-    let card = if maximized {
+    let card: Element<'_, TelemetryMessage> = mouse_area(card)
+        .on_enter(TelemetryMessage::SetHoveredChart(Some(chart)))
+        .on_exit(TelemetryMessage::SetHoveredChart(None))
+        .into();
+    let card: Element<'_, TelemetryMessage> = if maximized {
         container(card)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -2362,7 +2593,7 @@ fn analysis_panels<'a>(
     );
     let analysis_laps = lap_choice_list(
         &state.lap_choices,
-        state.selected_lap_index,
+        state.selected_timing_lap_index,
         TelemetryMessage::SelectLap,
         true,
     );
@@ -2394,24 +2625,41 @@ fn analysis_panels<'a>(
     .width(Length::Fill);
     let reference_content =
         column![setup_separated_block(reference_controls), reference_laps].width(Length::Fill);
-    let laps_content = column![
-        setup_separated_block(
-            callout(
+    let timing_tabs = setup_separated_block(
+        row![
+            timing_view_button(TimingView::Laps, state.timing_view),
+            timing_view_button(TimingView::Stints, state.timing_view),
+        ]
+        .spacing(12)
+        .width(Length::Fill),
+    );
+    let timing_body: Element<'_, TelemetryMessage> = match state.timing_view {
+        TimingView::Laps => column![
+            setup_separated_block(
                 row![
                     text(tr(Text::SessionLaps))
-                        .size(15)
+                        .size(14)
                         .font(typography::SANS_SEMIBOLD)
                         .width(Length::Fill),
-                    text(format_lap_count(state.lap_choices.len())).size(13),
+                    text(format_lap_count(state.lap_choices.len()))
+                        .size(12)
+                        .color(TEXT_SECONDARY),
                 ]
                 .align_y(iced::Alignment::Center),
-            )
-            .padding([8, 9])
-            .width(Length::Fill)
-        ),
-        analysis_laps,
-    ]
-    .width(Length::Fill);
+            ),
+            analysis_laps,
+            sector_timing_view(
+                state
+                    .selected_timing_lap_index
+                    .and_then(|index| session.lap_timings().get(index)),
+                session.lap_timings(),
+            ),
+        ]
+        .width(Length::Fill)
+        .into(),
+        TimingView::Stints => stint_timing_view(session.stints()),
+    };
+    let laps_content = column![timing_tabs, timing_body].width(Length::Fill);
     let mut charts_content = column![setup_separated_block(
         row![
             text(tr(Text::Layout))
@@ -2483,6 +2731,176 @@ fn analysis_panels<'a>(
     (setup.into(), analysis.into())
 }
 
+fn timing_view_button(
+    view: TimingView,
+    selected: TimingView,
+) -> Element<'static, TelemetryMessage> {
+    let label = match view {
+        TimingView::Laps => tr(Text::Laps),
+        TimingView::Stints => tr(Text::Stints),
+    };
+    let is_selected = view == selected;
+    let label = text(label)
+        .size(13)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+    let label = if is_selected {
+        label.font(typography::SANS_SEMIBOLD)
+    } else {
+        label
+    };
+    column![
+        iced::widget::button(label)
+            .width(Length::Fill)
+            .height(Length::Fixed(28.0))
+            .padding([4, 8])
+            .on_press(TelemetryMessage::SetTimingView(view))
+            .style(move |theme, status| timing_tab_style(theme, status, is_selected)),
+        rule::horizontal(2).style(move |theme| timing_tab_indicator_style(theme, is_selected)),
+    ]
+    .width(Length::Fill)
+    .into()
+}
+
+fn sector_timing_view(
+    lap: Option<&LapTiming>,
+    session_laps: &[LapTiming],
+) -> Element<'static, TelemetryMessage> {
+    let Some(lap) = lap.filter(|lap| !lap.sectors_ms().is_empty()) else {
+        return setup_separated_block(text(tr(Text::NoSectorData)).size(12).color(TEXT_SECONDARY));
+    };
+    let sectors = lap.sectors_ms().iter().enumerate().fold(
+        column![setup_section_heading(tr(Text::Sectors))],
+        |content, (index, duration)| {
+            let fastest = session_laps
+                .iter()
+                .filter_map(|lap| lap.sectors_ms().get(index).copied().flatten())
+                .min();
+            let accent = duration.map(|duration| {
+                if Some(duration) == fastest {
+                    STATUS_FASTEST
+                } else {
+                    STATUS_WARNING
+                }
+            });
+            content.push(metadata_row(
+                format!("S{}", index + 1),
+                duration.map_or_else(|| "--:--.---".to_owned(), format_lap_time),
+                accent,
+            ))
+        },
+    );
+    sectors.width(Length::Fill).into()
+}
+
+fn stint_timing_view(stints: &[StintTiming]) -> Element<'_, TelemetryMessage> {
+    if stints.is_empty() {
+        return setup_separated_block(text(tr(Text::NoStintData)).size(12).color(TEXT_SECONDARY));
+    }
+    stints
+        .iter()
+        .copied()
+        .fold(
+            column![].spacing(8).width(Length::Fill),
+            |content, stint| {
+                let status = if stint.is_complete() {
+                    tr(Text::Complete)
+                } else {
+                    tr(Text::Active)
+                };
+                let status_variant = if stint.is_complete() {
+                    BadgeVariant::Neutral
+                } else {
+                    BadgeVariant::Success
+                };
+                let lap_range = if stint.first_lap() == stint.last_lap() {
+                    stint.first_lap().to_string()
+                } else {
+                    format!("{}–{}", stint.first_lap(), stint.last_lap())
+                };
+                let details = column![
+                    setup_separated_block(
+                        row![
+                            text(format!("{} {}", tr(Text::Stint), stint.number()))
+                                .size(14)
+                                .font(typography::SANS_SEMIBOLD)
+                                .width(Length::Fill),
+                            badge(status).variant(status_variant),
+                        ]
+                        .align_y(iced::Alignment::Center),
+                    ),
+                    metadata_row(
+                        tr(Text::Laps),
+                        format!("{lap_range} ({})", stint.lap_count()),
+                        None,
+                    ),
+                    metadata_row(
+                        tr(Text::Best),
+                        stint
+                            .best_lap_ms()
+                            .map_or_else(|| "--:--.---".to_owned(), format_lap_time),
+                        None,
+                    ),
+                    metadata_row(
+                        tr(Text::Average),
+                        stint
+                            .average_lap_ms()
+                            .map_or_else(|| "--:--.---".to_owned(), format_lap_time),
+                        None,
+                    ),
+                    metadata_row(
+                        tr(Text::FuelUsed),
+                        format!("{:.1} L", stint.fuel_used_litres()),
+                        None,
+                    ),
+                ];
+                content.push(details.width(Length::Fill))
+            },
+        )
+        .into()
+}
+
+fn timing_tab_style(
+    theme: &iced::Theme,
+    status: iced::widget::button::Status,
+    selected: bool,
+) -> iced::widget::button::Style {
+    let palette = theme.extended_palette();
+    let background = match status {
+        iced::widget::button::Status::Hovered => Some(palette.background.weakest.color),
+        iced::widget::button::Status::Pressed => Some(palette.background.weak.color),
+        iced::widget::button::Status::Active | iced::widget::button::Status::Disabled => None,
+    };
+    let text_color = if selected {
+        palette.primary.base.color
+    } else {
+        palette.background.base.text
+    };
+
+    iced::widget::button::Style {
+        background: background.map(Background::Color),
+        text_color,
+        border: Border {
+            radius: 4.0.into(),
+            ..Border::default()
+        },
+        ..iced::widget::button::Style::default()
+    }
+}
+
+fn timing_tab_indicator_style(theme: &iced::Theme, selected: bool) -> rule::Style {
+    rule::Style {
+        color: if selected {
+            theme.extended_palette().primary.base.color
+        } else {
+            Color::TRANSPARENT
+        },
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: true,
+    }
+}
+
 fn lap_analysis_card_view<'a>(
     state: &TelemetryState,
     card: LapAnalysisCardId,
@@ -2491,10 +2909,23 @@ fn lap_analysis_card_view<'a>(
     focused: Option<FocusedTelemetry>,
     reference_focused: Option<FocusedTelemetry>,
 ) -> Element<'a, TelemetryMessage> {
+    let track_length_meters = state
+        .session_metadata
+        .track_length
+        .as_deref()
+        .and_then(parse_track_length_meters)
+        .unwrap_or(LAP_DISTANCE_AXIS_MAX);
     draggable_lap_analysis_card(
         state,
         card,
-        lap_analysis_card_content(card, sample, steering_angle_max, focused, reference_focused),
+        lap_analysis_card_content(
+            card,
+            sample,
+            steering_angle_max,
+            focused,
+            reference_focused,
+            track_length_meters,
+        ),
     )
 }
 
@@ -2504,6 +2935,7 @@ fn lap_analysis_card_content(
     steering_angle_max: Option<f32>,
     focused: Option<FocusedTelemetry>,
     reference_focused: Option<FocusedTelemetry>,
+    track_length_meters: f64,
 ) -> Element<'static, TelemetryMessage> {
     let content = column![].width(Length::Fill);
     let sample = current_sample.unwrap_or_default();
@@ -2524,7 +2956,12 @@ fn lap_analysis_card_content(
                     tr(Text::LapPosition),
                     focused_sample.map_or_else(
                         || "--".to_owned(),
-                        |sample| format_track_position(sample.normalized_car_position),
+                        |sample| {
+                            format_track_position(
+                                sample.normalized_car_position,
+                                track_length_meters,
+                            )
+                        },
                     ),
                     None,
                 ))
@@ -2677,7 +3114,8 @@ fn draggable_lap_analysis_card<'a>(
     } else {
         mouse::Interaction::Grab
     };
-    let handle = card_drag_handle(TelemetryMessage::BeginLapAnalysisDrag(card), interaction);
+    let actions_visible = state.hovered_lap_analysis_card == Some(card)
+        || state.dragging_lap_analysis_card == Some(card);
     let highlighted = state.dragging_lap_analysis_card.is_some()
         && (state.dragging_lap_analysis_card == Some(card)
             || state.lap_analysis_drop_target == Some(card));
@@ -2685,11 +3123,16 @@ fn draggable_lap_analysis_card<'a>(
         CardTitle::new(card.title(), card.icon()),
         content,
         0.0,
-        handle,
+        Some((TelemetryMessage::BeginLapAnalysisDrag(card), interaction)),
+        actions_visible,
         state.lap_analysis_collapsed[card.index()],
         TelemetryMessage::ToggleLapAnalysisCardCollapsed(card),
         highlighted,
     );
+    let card_content: Element<'_, TelemetryMessage> = mouse_area(card_content)
+        .on_enter(TelemetryMessage::SetHoveredLapAnalysisCard(Some(card)))
+        .on_exit(TelemetryMessage::SetHoveredLapAnalysisCard(None))
+        .into();
     let card_content: Element<'_, TelemetryMessage> = if state.dragging_lap_analysis_card
         == Some(card)
         && let (Some(origin), Some(cursor)) = (
@@ -2722,18 +3165,24 @@ fn draggable_setup_card<'a>(
     } else {
         mouse::Interaction::Grab
     };
-    let handle = card_drag_handle(TelemetryMessage::BeginSetupCardDrag(card), interaction);
+    let actions_visible =
+        state.hovered_setup_card == Some(card) || state.dragging_setup_card == Some(card);
     let highlighted = state.dragging_setup_card.is_some()
         && (state.dragging_setup_card == Some(card) || state.setup_card_drop_target == Some(card));
     let card_content = pane_card(
         CardTitle::new(card.title(), card.icon()),
         content,
         0.0,
-        handle,
+        Some((TelemetryMessage::BeginSetupCardDrag(card), interaction)),
+        actions_visible,
         state.setup_card_collapsed[card.index()],
         TelemetryMessage::ToggleSetupCardCollapsed(card),
         highlighted,
     );
+    let card_content: Element<'_, TelemetryMessage> = mouse_area(card_content)
+        .on_enter(TelemetryMessage::SetHoveredSetupCard(Some(card)))
+        .on_exit(TelemetryMessage::SetHoveredSetupCard(None))
+        .into();
     let card_content: Element<'_, TelemetryMessage> = if state.dragging_setup_card == Some(card)
         && let (Some(origin), Some(cursor)) =
             (state.setup_card_drag_origin, state.setup_card_drag_cursor)
@@ -2760,11 +3209,11 @@ fn metadata_value(value: Option<String>) -> String {
         .unwrap_or_else(|| "--".to_owned())
 }
 
-fn metadata_row(
-    label: &'static str,
+fn metadata_row<'a>(
+    label: impl Into<Cow<'a, str>>,
     value: String,
     accent: Option<Color>,
-) -> Element<'static, TelemetryMessage> {
+) -> Element<'a, TelemetryMessage> {
     let value = text(value)
         .size(14)
         .font(typography::SANS_SEMIBOLD)
@@ -2776,7 +3225,7 @@ fn metadata_row(
         None => value,
     };
 
-    let label = container(text(label).size(12).color(TEXT_SECONDARY))
+    let label = container(text(label.into()).size(12).color(TEXT_SECONDARY))
         .padding([0.0, DATA_TEXT_INSET])
         .width(Length::FillPortion(2))
         .height(Length::Fill)
