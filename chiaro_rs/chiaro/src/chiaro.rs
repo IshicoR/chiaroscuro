@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use chiaro_actions::{Action, Screen};
+use chiaro_actions::{Action, ReferenceIbtState, Screen};
 use chiaro_car_setup_ui::{
     self as car_setup, CarSetupLayout, CarSetupLayoutFlag, CarSetupMessage, CarSetupState,
 };
@@ -9,6 +9,7 @@ use chiaro_i18n::{Text, Translations, set_locale, tr};
 use chiaro_ibt_picker as ibt;
 use chiaro_live_telemetry::{self as live_telemetry, LiveTelemetryMessage, LiveTelemetrySource};
 use chiaro_navigation_ui::{self as navigation, Navigation};
+use chiaro_regulations_ui as regulations;
 use chiaro_settings_ui::{self as settings, SettingsMessage, SettingsState};
 use chiaro_telemetry::{LoadedIbt, RecordingSource, Session};
 use chiaro_telemetry_ui::{
@@ -49,6 +50,7 @@ struct Chiaroscuro {
     navigation: Navigation,
     session: Session,
     reference_session: Option<Session>,
+    reference_ibt: ReferenceIbtState,
     window: WindowState,
     telemetry: TelemetryState,
     car_setup: CarSetupState,
@@ -210,10 +212,7 @@ impl Chiaroscuro {
                 task.map(AppMessage::Window)
             },
             AppMessage::Telemetry(message) => self.update_telemetry(message),
-            AppMessage::CarSetup(message) => {
-                self.update_car_setup(message);
-                Task::none()
-            },
+            AppMessage::CarSetup(message) => self.update_car_setup(message),
             AppMessage::Settings(message) => {
                 let persists_configuration = message.persists_configuration();
                 let changes_locale = matches!(
@@ -291,6 +290,7 @@ impl Chiaroscuro {
                         car_setup::reset_session(
                             &mut self.car_setup,
                             &self.session,
+                            self.reference_session.as_ref(),
                             car_setup_active,
                         );
                     },
@@ -300,15 +300,15 @@ impl Chiaroscuro {
             },
             AppMessage::ReferenceIbtSelected(path) => {
                 let Some(path) = path else {
-                    self.telemetry.finish_reference_ibt_load();
+                    self.reference_ibt.finish_load();
                     return Task::none();
                 };
 
-                self.telemetry.begin_reference_ibt_load();
+                self.reference_ibt.begin_load();
                 Task::perform(ibt::load(path), AppMessage::ReferenceIbtLoaded)
             },
             AppMessage::ReferenceIbtLoaded(result) => {
-                self.telemetry.finish_reference_ibt_load();
+                self.reference_ibt.finish_load();
                 match result {
                     Ok(recording) => {
                         let mut reference = Session::default();
@@ -321,8 +321,14 @@ impl Chiaroscuro {
                             self.reference_session.as_ref(),
                             telemetry_active,
                         );
+                        let car_setup_active = self.car_setup_is_active();
+                        car_setup::reset_reference(
+                            &mut self.car_setup,
+                            self.reference_session.as_ref(),
+                            car_setup_active,
+                        );
                     },
-                    Err(error) => self.telemetry.mark_reference_ibt_error(error),
+                    Err(error) => self.reference_ibt.mark_error(error),
                 }
                 Task::none()
             },
@@ -343,15 +349,19 @@ impl Chiaroscuro {
                 &self.telemetry,
                 &self.session,
                 self.reference_session.as_ref(),
+                &self.reference_ibt,
                 self.live_telemetry_source.info(),
             )
             .map(AppMessage::Telemetry),
             Screen::CarSetup => car_setup::view(
                 &self.car_setup,
                 &self.session,
+                self.reference_session.as_ref(),
+                &self.reference_ibt,
                 self.live_telemetry_source.info(),
             )
             .map(AppMessage::CarSetup),
+            Screen::Regulations => regulations::view(&self.session),
             Screen::Settings => settings::view(
                 &self.settings,
                 &self.session,
@@ -394,7 +404,7 @@ impl Chiaroscuro {
         .height(Fill);
 
         match current_screen {
-            Screen::Telemetry | Screen::CarSetup => layout.into(),
+            Screen::Telemetry | Screen::CarSetup | Screen::Regulations => layout.into(),
             Screen::Settings => {
                 settings::with_dialog_preview(layout, &self.settings, AppMessage::Settings)
             },
@@ -413,17 +423,24 @@ impl Chiaroscuro {
                 Task::perform(ibt::select_file(), AppMessage::IbtSelected)
             },
             Action::OpenReferenceIbt => {
-                self.telemetry.begin_reference_ibt_selection();
+                self.reference_ibt.begin_selection();
                 Task::perform(ibt::select_file(), AppMessage::ReferenceIbtSelected)
             },
             Action::ClearReferenceIbt => {
                 self.reference_session = None;
+                self.reference_ibt.clear();
                 let telemetry_active = self.telemetry_is_active();
                 telemetry_ui::reset_reference(
                     &mut self.telemetry,
                     &self.session,
                     self.reference_session.as_ref(),
                     telemetry_active,
+                );
+                let car_setup_active = self.car_setup_is_active();
+                car_setup::reset_reference(
+                    &mut self.car_setup,
+                    self.reference_session.as_ref(),
+                    car_setup_active,
                 );
                 Task::none()
             },
@@ -440,7 +457,12 @@ impl Chiaroscuro {
                     self.reference_session.as_ref(),
                     telemetry_active,
                 );
-                car_setup::reset_session(&mut self.car_setup, &self.session, car_setup_active);
+                car_setup::reset_session(
+                    &mut self.car_setup,
+                    &self.session,
+                    self.reference_session.as_ref(),
+                    car_setup_active,
+                );
                 Task::none()
             },
             Action::ShowWindow => {
@@ -464,6 +486,7 @@ impl Chiaroscuro {
         match current {
             Screen::Telemetry => telemetry_ui::deactivate(&mut self.telemetry),
             Screen::CarSetup => car_setup::deactivate(&mut self.car_setup),
+            Screen::Regulations => {},
             Screen::Settings => {},
         }
         self.navigation.navigate(screen);
@@ -474,8 +497,13 @@ impl Chiaroscuro {
                 self.reference_session.as_ref(),
             ),
             Screen::CarSetup => {
-                car_setup::activate(&mut self.car_setup, &self.session);
+                car_setup::activate(
+                    &mut self.car_setup,
+                    &self.session,
+                    self.reference_session.as_ref(),
+                );
             },
+            Screen::Regulations => {},
             Screen::Settings => {},
         }
         Task::none()
@@ -508,7 +536,12 @@ impl Chiaroscuro {
                 &self.session,
                 self.reference_session.as_ref(),
             ),
-            Screen::CarSetup => car_setup::refresh(&mut self.car_setup, &self.session),
+            Screen::CarSetup => car_setup::refresh(
+                &mut self.car_setup,
+                &self.session,
+                self.reference_session.as_ref(),
+            ),
+            Screen::Regulations => {},
             Screen::Settings => {},
         }
     }
@@ -527,7 +560,11 @@ impl Chiaroscuro {
 
         self.car_setup = CarSetupState::default();
         self.car_setup.apply_layout(&car_setup_layout);
-        car_setup::refresh(&mut self.car_setup, &self.session);
+        car_setup::refresh(
+            &mut self.car_setup,
+            &self.session,
+            self.reference_session.as_ref(),
+        );
 
         match tray::TrayState::new() {
             Ok(tray) => self.tray = tray,
@@ -555,10 +592,10 @@ impl Chiaroscuro {
         self.handle_action(action)
     }
 
-    fn update_car_setup(&mut self, message: CarSetupMessage) {
+    fn update_car_setup(&mut self, message: CarSetupMessage) -> Task<AppMessage> {
         let layout_revision = self.car_setup.layout_revision();
         let resets_layout = message.resets_layout();
-        car_setup::update(&mut self.car_setup, message);
+        let action = car_setup::update(&mut self.car_setup, message);
 
         let changed_layout = (self.car_setup.layout_revision() != layout_revision)
             .then(|| self.car_setup.layout_snapshot());
@@ -566,6 +603,8 @@ impl Chiaroscuro {
         {
             self.save_configuration();
         }
+
+        self.handle_action(action)
     }
 }
 
@@ -709,7 +748,10 @@ fn update_persisted_car_setup_layout(
 }
 
 fn workspace_is_foreground(screen: Screen, window_is_backgrounded: bool) -> bool {
-    matches!(screen, Screen::Telemetry | Screen::CarSetup) && !window_is_backgrounded
+    matches!(
+        screen,
+        Screen::Telemetry | Screen::CarSetup | Screen::Regulations
+    ) && !window_is_backgrounded
 }
 
 fn window_became_foreground(was_backgrounded: bool, is_backgrounded: bool) -> bool {
@@ -722,7 +764,7 @@ fn screen_is_foreground(current: Screen, target: Screen, window_is_backgrounded:
 
 fn screen_content_padding(screen: Screen) -> f32 {
     match screen {
-        Screen::Telemetry | Screen::CarSetup => 0.0,
+        Screen::Telemetry | Screen::CarSetup | Screen::Regulations => 0.0,
         Screen::Settings => CONTENT_PADDING,
     }
 }

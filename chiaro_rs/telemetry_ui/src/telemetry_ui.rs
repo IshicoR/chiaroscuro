@@ -39,7 +39,7 @@ use readout::{
 };
 use scaling::{maximum_y, padded_y_limits, symmetric_y_limits};
 
-use chiaro_actions::Action;
+use chiaro_actions::{Action, IbtLoadState, ReferenceIbtState};
 use chiaro_i18n::{Text, count_samples, count_turns, tr};
 use chiaro_irsdk::{TelemetrySample, variables};
 use chiaro_telemetry::{
@@ -87,14 +87,6 @@ const TEXT_SECONDARY: Color = Color::from_rgb(0.78, 0.78, 0.78);
 const THROTTLE_LINE_COLOR: Color = Color::from_rgb(0.12, 0.72, 0.38);
 const BRAKE_LINE_COLOR: Color = Color::from_rgb(0.90, 0.24, 0.24);
 const STEERING_LINE_COLOR: Color = Color::from_rgb(0.20, 0.72, 0.68);
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-enum IbtLoadState {
-    #[default]
-    Idle,
-    Selecting,
-    Loading,
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TimingView {
@@ -148,8 +140,6 @@ pub struct TelemetryState {
     rendered_packets: u64,
     chart_packet_cursors: [Option<u64>; ChartId::COUNT],
     ibt_load_state: IbtLoadState,
-    reference_ibt_load_state: IbtLoadState,
-    reference_ibt_error: Option<String>,
     lap_choices: Vec<LapChoice>,
     selected_lap_index: Option<usize>,
     selected_timing_lap_index: Option<usize>,
@@ -227,8 +217,6 @@ impl Default for TelemetryState {
             rendered_packets: 0,
             chart_packet_cursors: [None; ChartId::COUNT],
             ibt_load_state: IbtLoadState::Idle,
-            reference_ibt_load_state: IbtLoadState::Idle,
-            reference_ibt_error: None,
             lap_choices: Vec::new(),
             selected_lap_index: None,
             selected_timing_lap_index: None,
@@ -404,24 +392,6 @@ impl TelemetryState {
 
     pub fn finish_ibt_load(&mut self) {
         self.ibt_load_state = IbtLoadState::Idle;
-    }
-
-    pub fn begin_reference_ibt_selection(&mut self) {
-        self.reference_ibt_load_state = IbtLoadState::Selecting;
-        self.reference_ibt_error = None;
-    }
-
-    pub fn begin_reference_ibt_load(&mut self) {
-        self.reference_ibt_load_state = IbtLoadState::Loading;
-        self.reference_ibt_error = None;
-    }
-
-    pub fn finish_reference_ibt_load(&mut self) {
-        self.reference_ibt_load_state = IbtLoadState::Idle;
-    }
-
-    pub fn mark_reference_ibt_error(&mut self, error: String) {
-        self.reference_ibt_error = Some(error);
     }
 
     fn clear_chart_drag(&mut self) {
@@ -2024,7 +1994,6 @@ pub fn reset_reference(
             .collect()
     });
     state.selected_reference_lap_index = reference_session.and_then(Session::preferred_lap_index);
-    state.reference_ibt_error = None;
     if telemetry_active {
         sync_telemetry(state, session, reference_session);
     }
@@ -2150,12 +2119,14 @@ pub fn view<'a>(
     state: &'a TelemetryState,
     session: &'a Session,
     reference_session: Option<&'a Session>,
+    reference_ibt: &'a ReferenceIbtState,
     live_source: LiveTelemetrySourceInfo,
 ) -> Element<'a, TelemetryMessage> {
     container(telemetry_content(
         state,
         session,
         reference_session,
+        reference_ibt,
         live_source,
     ))
     .padding(CONTENT_PADDING)
@@ -2168,6 +2139,7 @@ fn telemetry_content<'a>(
     state: &'a TelemetryState,
     session: &'a Session,
     reference_session: Option<&'a Session>,
+    reference_ibt: &'a ReferenceIbtState,
     live_source: LiveTelemetrySourceInfo,
 ) -> Element<'a, TelemetryMessage> {
     let charts: Element<'_, TelemetryMessage> = if let Some(chart) = state.maximized_chart {
@@ -2190,8 +2162,13 @@ fn telemetry_content<'a>(
             .into()
     };
 
-    let (analysis_setup, lap_analysis) =
-        analysis_panels(state, session, reference_session, live_source);
+    let (analysis_setup, lap_analysis) = analysis_panels(
+        state,
+        session,
+        reference_session,
+        reference_ibt,
+        live_source,
+    );
 
     row![analysis_setup, charts, lap_analysis]
         .spacing(16)
@@ -2351,6 +2328,7 @@ fn analysis_panels<'a>(
     state: &'a TelemetryState,
     session: &'a Session,
     reference_session: Option<&'a Session>,
+    reference_ibt: &'a ReferenceIbtState,
     live_source: LiveTelemetrySourceInfo,
 ) -> (Element<'a, TelemetryMessage>, Element<'a, TelemetryMessage>) {
     let sample = state
@@ -2456,7 +2434,7 @@ fn analysis_panels<'a>(
         .on_press_maybe(
             (state.ibt_load_state == IbtLoadState::Idle).then_some(TelemetryMessage::OpenIbt),
         );
-    let reference_open_label = match state.reference_ibt_load_state {
+    let reference_open_label = match reference_ibt.load_state() {
         IbtLoadState::Idle => tr(Text::OpenIbt),
         IbtLoadState::Selecting => tr(Text::Selecting),
         IbtLoadState::Loading => tr(Text::Loading),
@@ -2485,11 +2463,12 @@ fn analysis_panels<'a>(
     .height(Length::Fixed(38.0))
     .padding(5)
     .on_press_maybe(
-        (state.reference_ibt_load_state == IbtLoadState::Idle)
+        reference_ibt
+            .is_idle()
             .then_some(TelemetryMessage::OpenReferenceIbt),
     );
-    let can_clear_reference = state.reference_ibt_load_state == IbtLoadState::Idle
-        && (reference_session.is_some() || state.reference_ibt_error.is_some());
+    let can_clear_reference =
+        reference_ibt.is_idle() && (reference_session.is_some() || reference_ibt.error().is_some());
     let clear_reference_button = icon_button(lucide::x().size(16), tr(Text::ClearReference))
         .variant(ButtonVariant::Outline)
         .size(ButtonSize::Icon)
@@ -2497,7 +2476,7 @@ fn analysis_panels<'a>(
         .height(Length::Fixed(38.0))
         .padding(8)
         .on_press_maybe(can_clear_reference.then_some(TelemetryMessage::ClearReferenceIbt));
-    let reference_description = state.reference_ibt_error.as_deref().map_or_else(
+    let reference_description = reference_ibt.error().map_or_else(
         || {
             reference_session.map_or_else(
                 || tr(Text::NoReferenceLoaded).to_owned(),
@@ -2529,7 +2508,7 @@ fn analysis_panels<'a>(
         },
         str::to_owned,
     );
-    let reference_color = if state.reference_ibt_error.is_some()
+    let reference_color = if reference_ibt.error().is_some()
         || reference_session.is_some_and(|reference| comparison_issue(session, reference).is_some())
     {
         STATUS_ERROR
