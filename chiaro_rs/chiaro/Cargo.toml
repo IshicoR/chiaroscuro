@@ -27,6 +27,7 @@ chiaro_settings_ui = { workspace = true }
 chiaro_telemetry_ui = { workspace = true }
 chiaro_widgets = { workspace = true }
 chiaro_tray = { workspace = true }
+chiaro_regulations_ui = { workspace = true }
 chiaro_window = { workspace = true }
 chiaro_telemetry = { workspace = true }
 iced = { workspace = true }

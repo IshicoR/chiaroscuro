@@ -89,6 +89,8 @@ catalog! {
     ClearReference => "Clear reference", "参照データを消去";
     NoReferenceLoaded => "No reference loaded", "参照データが読み込まれていません";
     ReferenceIbtUnavailable => "Reference IBT unavailable", "参照 IBT を利用できません";
+    ReferenceSetup => "Reference setup", "参照セットアップ";
+    ReferenceSetupUnavailable => "The reference IBT does not contain setup data.", "参照 IBT にセットアップデータがありません。";
     MainIbtRequired => "Main IBT required", "メイン IBT が必要です";
     TrackMismatch => "Track mismatch", "トラックが一致しません";
     CarMismatch => "Car mismatch", "車両が一致しません";
@@ -221,6 +223,16 @@ catalog! {
     TechFailed => "Tech failed", "車検不合格";
     CornerComparison => "Corner comparison", "コーナー比較";
     Setting => "Setting", "設定項目";
+    Current => "Current", "現在";
+    Difference => "Difference", "差分";
+    Changed => "Changed", "変更あり";
+    Unchanged => "Unchanged", "変更なし";
+    CurrentOnly => "Current only", "現在側のみ";
+    ReferenceOnly => "Reference only", "参照側のみ";
+    ChangedOnly => "Changed values only", "変更項目のみ";
+    NoSetupDifferences => "No setup differences", "セットアップの差分はありません";
+    NoSetupDifferencesDescription => "The visible values match the reference setup.", "表示対象の値は参照セットアップと一致しています。";
+    CarSetupMismatch => "The reference setup belongs to a different car.", "参照セットアップの車両が異なります。";
     NoSetupDataYet => "No setup data yet", "セットアップデータがまだありません";
     NoSetupDataDescription => "Connect to a live telemetry source or load an IBT recording to inspect the player car setup.", "ライブテレメトリーへ接続するか IBT 記録を読み込むと、プレイヤー車両のセットアップを確認できます。";
     SetupUnavailableDescription => "This session does not publish CarSetup data. It can be absent while spectating, replaying, or changing sessions.", "このセッションは CarSetup データを公開していません。観戦中、リプレイ中、セッション切替中には存在しないことがあります。";

@@ -1,10 +1,15 @@
-use chiaro_i18n::{
-    Text, cylinder_count, gear_count, idle_rpm, item_number, redline_rpm, setup_label, setup_value,
-    tr,
-};
-use chiaro_irsdk::{Driver, DriverInfo, SdkBool, SessionInfoDocument};
+use chiaro_actions::{IbtLoadState, ReferenceIbtState};
+use chiaro_i18n::{Text, item_number, setup_label, setup_value, tr};
+#[cfg(test)]
+use chiaro_i18n::{cylinder_count, gear_count, idle_rpm, redline_rpm};
+#[cfg(test)]
+use chiaro_irsdk::{Driver, DriverInfo};
+use chiaro_irsdk::{SdkBool, SessionInfoDocument};
 use chiaro_telemetry::{ConnectionStatus, LiveTelemetrySourceInfo, Session};
-use chiaro_widgets::{BadgeVariant, badge, callout, typography};
+use chiaro_widgets::{
+    BadgeVariant, ButtonSize, ButtonVariant, badge, button as action_button, callout, icon_button,
+    typography,
+};
 use iced::{
     Element, Length, Padding, Theme,
     alignment::{Horizontal, Vertical},
@@ -25,13 +30,21 @@ const MAX_VISUAL_INDENT_DEPTH: usize = 6;
 const CORNER_TABLE_BREAKPOINT: f32 = 560.0;
 const CORNER_LABEL_PORTION: u16 = 6;
 const CORNER_VALUE_PORTION: u16 = 2;
+const COMPARISON_LABEL_PORTION: u16 = 5;
+const COMPARISON_VALUE_PORTION: u16 = 3;
+const COMPARISON_DIFFERENCE_PORTION: u16 = 2;
+const COMPARISON_HEADER_HEIGHT: f32 = 32.0;
+const COMPARISON_ROW_HEIGHT: f32 = 36.0;
 const TABLE_BODY_SIZE: u32 = 13;
 const TABLE_CELL_VERTICAL_PADDING: f32 = 7.0;
 const TABLE_CELL_HORIZONTAL_PADDING: f32 = 8.0;
 const SUMMARY_CARD_KEY: &str = "summary";
 const STATUS_CARD_KEY: &str = "status";
+#[cfg(test)]
 const VEHICLE_SPECIFICATIONS_CARD_KEY: &str = "vehicle:specifications";
+#[cfg(test)]
 const REGULATIONS_CARD_KEY: &str = "vehicle:regulations";
+#[cfg(test)]
 const GENERAL_SETUP_CARD_KEY: &str = "setup:general";
 const VALUE_SETUP_CARD_KEY: &str = "setup:value";
 const SETUP_SECTION_CARD_PREFIX: &str = "setup:section:";
@@ -45,10 +58,21 @@ pub(super) struct SetupViewData {
     load_type: Option<String>,
     modified: Option<bool>,
     passed_tech: Option<bool>,
+    #[cfg(test)]
     fixed_setup: Option<bool>,
     update_count: Option<String>,
+    #[cfg(test)]
     vehicle_sections: Vec<SetupSection>,
     sections: Vec<SetupSection>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SetupViewContext<'a> {
+    pub(super) session: &'a Session,
+    pub(super) reference_session: Option<&'a Session>,
+    pub(super) reference_ibt: &'a ReferenceIbtState,
+    pub(super) reference: Option<&'a SetupViewData>,
+    pub(super) live_source: LiveTelemetrySourceInfo,
 }
 
 impl SetupViewData {
@@ -62,6 +86,7 @@ impl SetupViewData {
                     .find(|driver| driver.car_idx == Some(player_car))
             })
         });
+        #[cfg(test)]
         let fixed_setup = document
             .weekend_info
             .as_ref()
@@ -70,8 +95,9 @@ impl SetupViewData {
             .and_then(SdkBool::as_bool);
         let (update_count, sections) = document.car_setup.as_ref().map_or_else(
             || (None, Vec::new()),
-            |setup| (setup_update_count(setup), setup_sections(setup)),
+            |setup| (setup_update_count(setup), setup_item_sections(setup)),
         );
+        #[cfg(test)]
         let vehicle_sections = vehicle_sections(driver_info, driver, fixed_setup);
 
         Self {
@@ -103,8 +129,10 @@ impl SetupViewData {
             passed_tech: driver_info
                 .and_then(|info| info.driver_setup_passed_tech)
                 .and_then(SdkBool::as_bool),
+            #[cfg(test)]
             fixed_setup,
             update_count,
+            #[cfg(test)]
             vehicle_sections,
             sections,
         }
@@ -118,18 +146,8 @@ impl SetupViewData {
     }
 
     pub(super) fn card_keys(&self) -> Vec<String> {
-        let mut keys = Vec::with_capacity(
-            2 + self
-                .vehicle_sections
-                .len()
-                .saturating_add(self.sections.len()),
-        );
+        let mut keys = Vec::with_capacity(2 + self.sections.len());
         keys.push(SUMMARY_CARD_KEY.to_owned());
-        keys.extend(
-            self.vehicle_sections
-                .iter()
-                .map(|section| section.key.clone()),
-        );
         if matches!(self.status, SetupDataStatus::Available) && !self.sections.is_empty() {
             keys.extend(self.sections.iter().map(|section| section.key.clone()));
         } else {
@@ -159,31 +177,63 @@ impl SetupViewData {
 
     pub(super) fn card_icon(key: &str) -> iced::widget::Text<'static> {
         match key {
-            SUMMARY_CARD_KEY | VEHICLE_SPECIFICATIONS_CARD_KEY => lucide::car_front(),
+            SUMMARY_CARD_KEY => lucide::car_front(),
             STATUS_CARD_KEY => lucide::info(),
-            REGULATIONS_CARD_KEY => lucide::shield_check(),
             _ => lucide::sliders_horizontal(),
         }
     }
 
+    pub(super) fn card_pair(key: &str) -> Option<CardPair> {
+        let (parent, raw_item) = key.rsplit_once(':')?;
+        let (axle, side) = match setup_corner(&humanize_key(raw_item))? {
+            SetupCorner::LeftFront => ("front", CardSide::Left),
+            SetupCorner::RightFront => ("front", CardSide::Right),
+            SetupCorner::LeftRear => ("rear", CardSide::Left),
+            SetupCorner::RightRear => ("rear", CardSide::Right),
+        };
+        Some(CardPair {
+            group: format!("{parent}:{axle}"),
+            side,
+        })
+    }
+
     pub(super) fn card_content<'a>(
         &'a self,
-        session: &'a Session,
-        live_source: LiveTelemetrySourceInfo,
+        context: SetupViewContext<'a>,
         key: &str,
     ) -> Element<'a, CarSetupMessage> {
         match key {
-            SUMMARY_CARD_KEY => summary_content(session, live_source, self),
-            STATUS_CARD_KEY => status_content(self),
-            _ => self.section(key).map_or_else(
-                || {
-                    empty_state(
-                        tr(Text::SetupUnavailable),
-                        tr(Text::SetupSectionUnavailable),
-                    )
-                },
-                section_content,
+            SUMMARY_CARD_KEY => summary_content(
+                context.session,
+                context.reference_session,
+                context.reference_ibt,
+                context.live_source,
+                self,
+                context.reference,
             ),
+            STATUS_CARD_KEY => status_content(self),
+            _ => {
+                let current_section = self.section(key);
+                let comparable_reference = context.reference.filter(|reference| {
+                    self.has_setup() && reference.has_setup() && self.same_car_as(reference)
+                });
+                current_section.map_or_else(
+                    || {
+                        empty_state(
+                            tr(Text::SetupUnavailable),
+                            tr(Text::SetupSectionUnavailable),
+                        )
+                    },
+                    |current| {
+                        section_content(
+                            current,
+                            comparable_reference
+                                .and_then(|reference| reference.comparison_section(key)),
+                            comparable_reference.is_some(),
+                        )
+                    },
+                )
+            },
         }
     }
 
@@ -199,25 +249,34 @@ impl SetupViewData {
         })
     }
 
-    pub(super) fn card_weight(&self, key: &str) -> usize {
-        match key {
-            SUMMARY_CARD_KEY => 8,
-            STATUS_CARD_KEY => 4,
-            _ => self
-                .section(key)
-                .map_or(2, |section| section.rows.len().saturating_add(2)),
-        }
-    }
-
-    pub(super) fn card_is_full_width(key: &str) -> bool {
-        matches!(key, SUMMARY_CARD_KEY | STATUS_CARD_KEY)
-    }
-
     fn section(&self, key: &str) -> Option<&SetupSection> {
-        self.vehicle_sections
-            .iter()
-            .chain(&self.sections)
-            .find(|section| section.key == key)
+        self.sections.iter().find(|section| section.key == key)
+    }
+
+    fn comparison_section(&self, current_key: &str) -> Option<&SetupSection> {
+        self.section(current_key).or_else(|| {
+            let current_pair = Self::card_pair(current_key)?;
+            self.sections.iter().find(|section| {
+                Self::card_pair(&section.key)
+                    .is_some_and(|reference_pair| reference_pair == current_pair)
+            })
+        })
+    }
+
+    fn same_car_as(&self, reference: &Self) -> bool {
+        if let Some((current, reference)) =
+            self.car_path.as_deref().zip(reference.car_path.as_deref())
+        {
+            return current.eq_ignore_ascii_case(reference);
+        }
+        self.car_name
+            .as_deref()
+            .zip(reference.car_name.as_deref())
+            .is_none_or(|(current, reference)| current.eq_ignore_ascii_case(reference))
+    }
+
+    fn has_setup(&self) -> bool {
+        matches!(self.status, SetupDataStatus::Available)
     }
 }
 
@@ -231,14 +290,14 @@ enum SetupDataStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SetupSection {
-    key: String,
-    title: String,
-    rows: Vec<SetupRow>,
+pub(super) struct SetupSection {
+    pub(super) key: String,
+    pub(super) title: String,
+    pub(super) rows: Vec<SetupRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum SetupRow {
+pub(super) enum SetupRow {
     Group {
         label: String,
         depth: usize,
@@ -257,6 +316,18 @@ enum SetupCorner {
     RightFront,
     LeftRear,
     RightRear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CardSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CardPair {
+    pub(super) group: String,
+    pub(super) side: CardSide,
 }
 
 impl SetupCorner {
@@ -285,7 +356,7 @@ impl SetupCorner {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ComparisonFieldKey {
     path: String,
     occurrence: usize,
@@ -315,6 +386,7 @@ struct RootSetupEntry<'a> {
     corner: Option<SetupCorner>,
 }
 
+#[cfg(test)]
 fn vehicle_sections(
     driver_info: Option<&DriverInfo>,
     driver: Option<&Driver>,
@@ -388,6 +460,7 @@ fn vehicle_sections(
     sections
 }
 
+#[cfg(test)]
 fn info_section<const N: usize>(
     key: &'static str,
     title: &'static str,
@@ -407,6 +480,7 @@ fn info_section<const N: usize>(
     }
 }
 
+#[cfg(test)]
 fn has_vehicle_specifications(info: &DriverInfo, driver: Option<&Driver>) -> bool {
     info.driver_car_version
         .as_deref()
@@ -429,6 +503,7 @@ fn has_vehicle_specifications(info: &DriverInfo, driver: Option<&Driver>) -> boo
         || driver.is_some_and(|driver| driver.car_is_electric.is_some())
 }
 
+#[cfg(test)]
 fn has_regulations(
     driver_info: Option<&DriverInfo>,
     driver: Option<&Driver>,
@@ -465,6 +540,7 @@ fn has_regulations(
         })
 }
 
+#[cfg(test)]
 fn format_powertrain(info: &DriverInfo, driver: Option<&Driver>) -> String {
     let electric = info
         .driver_car_is_electric
@@ -493,6 +569,7 @@ fn format_powertrain(info: &DriverInfo, driver: Option<&Driver>) -> String {
     joined_or_placeholder(parts)
 }
 
+#[cfg(test)]
 fn format_transmission(info: &DriverInfo) -> String {
     let mut parts = Vec::new();
     if let Some(gears) = info.driver_car_gear_num_forward {
@@ -514,6 +591,7 @@ fn format_transmission(info: &DriverInfo) -> String {
     joined_or_placeholder(parts)
 }
 
+#[cfg(test)]
 fn format_shift_lights(info: &DriverInfo) -> String {
     let stages = [
         ("F", info.driver_car_shift_light_first_rpm),
@@ -537,6 +615,7 @@ fn format_shift_lights(info: &DriverInfo) -> String {
     }
 }
 
+#[cfg(test)]
 fn format_fuel_system(info: &DriverInfo) -> String {
     let mut parts = Vec::new();
     if let Some(capacity) = info
@@ -555,6 +634,7 @@ fn format_fuel_system(info: &DriverInfo) -> String {
     joined_or_placeholder(parts)
 }
 
+#[cfg(test)]
 fn format_tyre_compounds(info: &DriverInfo) -> String {
     let mut compounds = Vec::new();
     for tyre in &info.driver_tires {
@@ -573,6 +653,7 @@ fn format_tyre_compounds(info: &DriverInfo) -> String {
     joined_or_placeholder(compounds)
 }
 
+#[cfg(test)]
 fn format_rpm_range(idle: Option<f64>, redline: Option<f64>) -> Option<String> {
     match (
         idle.filter(|value| value.is_finite()),
@@ -585,6 +666,7 @@ fn format_rpm_range(idle: Option<f64>, redline: Option<f64>) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 fn format_fuel_allowance(driver_info: Option<&DriverInfo>, driver: Option<&Driver>) -> String {
     let ratio = driver
         .and_then(|driver| driver.car_class_max_fuel_pct.as_deref())
@@ -608,6 +690,7 @@ fn format_fuel_allowance(driver_info: Option<&DriverInfo>, driver: Option<&Drive
     }
 }
 
+#[cfg(test)]
 fn parse_fuel_ratio(value: &str) -> Option<f64> {
     let value = leading_number(value)?;
     value.is_finite().then_some(if value.abs() <= 1.0 {
@@ -617,6 +700,7 @@ fn parse_fuel_ratio(value: &str) -> Option<f64> {
     })
 }
 
+#[cfg(test)]
 fn format_dry_tyre_set_limit(value: Option<&str>) -> String {
     let Some(value) = value.and_then(non_blank) else {
         return "--".to_owned();
@@ -632,6 +716,7 @@ fn format_dry_tyre_set_limit(value: Option<&str>) -> String {
     }
 }
 
+#[cfg(test)]
 fn leading_number(value: &str) -> Option<f64> {
     value
         .split_whitespace()
@@ -641,10 +726,12 @@ fn leading_number(value: &str) -> Option<f64> {
         .ok()
 }
 
+#[cfg(test)]
 fn optional_text(value: Option<&str>) -> String {
     value.and_then(non_blank).unwrap_or("--").to_owned()
 }
 
+#[cfg(test)]
 fn joined_or_placeholder(values: Vec<String>) -> String {
     if values.is_empty() {
         "--".to_owned()
@@ -686,6 +773,17 @@ fn setup_content_blocks(section: &SetupSection) -> Vec<SetupContentBlock<'_>> {
 
     push_plain_setup_block(&mut blocks, &mut plain_rows);
     blocks
+}
+
+fn setup_content_blocks_for_display(
+    section: &SetupSection,
+    comparing: bool,
+) -> Vec<SetupContentBlock<'_>> {
+    if comparing {
+        vec![SetupContentBlock::Rows(section.rows.iter().collect())]
+    } else {
+        setup_content_blocks(section)
+    }
 }
 
 fn push_plain_setup_block<'a>(
@@ -860,8 +958,11 @@ fn setup_corner(label: &str) -> Option<SetupCorner> {
 
 fn summary_content<'a>(
     session: &'a Session,
+    reference_session: Option<&'a Session>,
+    reference_ibt: &'a ReferenceIbtState,
     live_source: LiveTelemetrySourceInfo,
     data: &'a SetupViewData,
+    reference: Option<&'a SetupViewData>,
 ) -> Element<'a, CarSetupMessage> {
     let details = grid([
         summary_item(tr(Text::Setup), data.setup_name.as_deref().unwrap_or("--")),
@@ -880,10 +981,103 @@ fn summary_content<'a>(
     .columns(3)
     .spacing(1)
     .height(Length::Shrink);
-    column![container(details).padding(4).width(Length::Fill)]
-        .spacing(10)
+    column![
+        container(details).padding(4).width(Length::Fill),
+        reference_controls(data, reference, reference_session, reference_ibt,),
+    ]
+    .spacing(10)
+    .width(Length::Fill)
+    .into()
+}
+
+fn reference_controls<'a>(
+    current: &SetupViewData,
+    reference: Option<&SetupViewData>,
+    reference_session: Option<&Session>,
+    reference_ibt: &'a ReferenceIbtState,
+) -> Element<'a, CarSetupMessage> {
+    let open_label = match reference_ibt.load_state() {
+        IbtLoadState::Idle => tr(Text::OpenIbt),
+        IbtLoadState::Selecting => tr(Text::Selecting),
+        IbtLoadState::Loading => tr(Text::Loading),
+    };
+    let open_button = action_button(text(open_label).size(BODY_SIZE))
+        .variant(ButtonVariant::Outline)
+        .size(ButtonSize::Medium)
         .width(Length::Fill)
-        .into()
+        .on_press_maybe(
+            reference_ibt
+                .is_idle()
+                .then_some(CarSetupMessage::OpenReferenceIbt),
+        );
+    let can_clear =
+        reference_ibt.is_idle() && (reference_session.is_some() || reference_ibt.error().is_some());
+    let clear_button = icon_button(lucide::x().size(16), tr(Text::ClearReference))
+        .variant(ButtonVariant::Outline)
+        .size(ButtonSize::Icon)
+        .on_press_maybe(can_clear.then_some(CarSetupMessage::ClearReferenceIbt));
+    let description =
+        reference_description(current, reference, reference_session, reference_ibt.error());
+    column![
+        rule::horizontal(1).style(separator_style),
+        row![
+            column![
+                text(tr(Text::ReferenceSetup))
+                    .size(LABEL_SIZE)
+                    .font(typography::SANS_SEMIBOLD)
+                    .style(secondary_text_style),
+                text(description)
+                    .size(BODY_SIZE)
+                    .font(typography::SANS)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            ]
+            .spacing(4)
+            .width(Length::Fill),
+            row![open_button, clear_button]
+                .spacing(6)
+                .align_y(Vertical::Center)
+                .width(Length::FillPortion(1)),
+        ]
+        .spacing(12)
+        .align_y(Vertical::Center),
+    ]
+    .spacing(10)
+    .padding([8, 10])
+    .width(Length::Fill)
+    .into()
+}
+
+fn reference_description(
+    current: &SetupViewData,
+    reference: Option<&SetupViewData>,
+    reference_session: Option<&Session>,
+    error: Option<&str>,
+) -> String {
+    if let Some(error) = error {
+        return error.to_owned();
+    }
+    let Some(reference_session) = reference_session else {
+        return tr(Text::NoReferenceLoaded).to_owned();
+    };
+    let file_name = reference_session
+        .ibt_info()
+        .map(|info| info.file_name.as_str())
+        .unwrap_or(tr(Text::ReferenceIbtUnavailable));
+    let Some(reference) = reference else {
+        return format!("{} · {file_name}", tr(Text::ReferenceSetupUnavailable));
+    };
+    if !reference.has_setup() {
+        return format!("{} · {file_name}", tr(Text::ReferenceSetupUnavailable));
+    }
+    if !current.has_setup() {
+        return format!("{} · {file_name}", tr(Text::SetupUnavailable));
+    }
+    if !current.same_car_as(reference) {
+        return format!("{} · {file_name}", tr(Text::CarSetupMismatch));
+    }
+
+    let setup_name = reference.setup_name.as_deref().unwrap_or("--");
+    format!("{setup_name} · {file_name}")
 }
 
 fn status_badges<'a>(data: &'a SetupViewData) -> Vec<Element<'a, CarSetupMessage>> {
@@ -942,16 +1136,31 @@ fn summary_item<'a>(
     .into()
 }
 
-fn section_content(section: &SetupSection) -> Element<'_, CarSetupMessage> {
-    let blocks = setup_content_blocks(section);
+fn section_content<'a>(
+    section: &'a SetupSection,
+    reference: Option<&SetupSection>,
+    comparing: bool,
+) -> Element<'a, CarSetupMessage> {
+    let blocks = setup_content_blocks_for_display(section, comparing);
     let mut content = column![].spacing(8);
+    let reference_values = reference
+        .map(|section| flatten_comparison_values(&section.rows))
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
 
     if blocks.is_empty() {
-        content = content.push(setup_value_row(tr(Text::Value), "--", 0));
+        content = content.push(if comparing {
+            comparison_value_row(tr(Text::Value), "--", None)
+        } else {
+            setup_value_row(tr(Text::Value), "--", 0)
+        });
     } else {
         for block in blocks {
             content = content.push(match block {
-                SetupContentBlock::Rows(rows) => setup_rows_view(rows),
+                SetupContentBlock::Rows(rows) => {
+                    setup_rows_view(rows, comparing.then_some(&reference_values))
+                },
                 SetupContentBlock::CornerComparison(comparison) => {
                     corner_comparison_view(comparison)
                 },
@@ -962,21 +1171,243 @@ fn section_content(section: &SetupSection) -> Element<'_, CarSetupMessage> {
     container(content).width(Length::Fill).clip(true).into()
 }
 
-fn setup_rows_view(rows: Vec<&SetupRow>) -> Element<'_, CarSetupMessage> {
+fn flatten_comparison_values(rows: &[SetupRow]) -> Vec<(ComparisonFieldKey, String)> {
+    let mut parents: Vec<&str> = Vec::new();
+    let mut fields: Vec<(ComparisonFieldKey, String)> = Vec::new();
+    for row in rows {
+        match row {
+            SetupRow::Group { label, depth } => {
+                parents.truncate(*depth);
+                parents.push(label);
+            },
+            SetupRow::Value {
+                label,
+                value,
+                depth,
+            } => {
+                parents.truncate(*depth);
+                let path = comparison_field_path(&parents, label);
+                let occurrence = fields.iter().filter(|(key, _)| key.path == path).count();
+                fields.push((ComparisonFieldKey { path, occurrence }, value.clone()));
+            },
+        }
+    }
+    fields
+}
+
+fn comparison_field_path(parents: &[&str], label: &str) -> String {
+    let mut path = parents
+        .iter()
+        .map(|parent| {
+            setup_corner(parent)
+                .map(|corner| corner.short_label().to_owned())
+                .unwrap_or_else(|| (*parent).to_owned())
+        })
+        .collect::<Vec<_>>();
+    path.push(label.to_owned());
+    path.join(" · ")
+}
+
+fn comparison_table_header() -> Element<'static, CarSetupMessage> {
+    row![
+        comparison_table_cell(
+            tr(Text::Setting).to_owned(),
+            COMPARISON_LABEL_PORTION,
+            true,
+            false,
+        ),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(
+            tr(Text::Current).to_owned(),
+            COMPARISON_VALUE_PORTION,
+            true,
+            false,
+        ),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(
+            tr(Text::Reference).to_owned(),
+            COMPARISON_VALUE_PORTION,
+            true,
+            false,
+        ),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(
+            tr(Text::Difference).to_owned(),
+            COMPARISON_DIFFERENCE_PORTION,
+            true,
+            false,
+        ),
+    ]
+    .spacing(0)
+    .align_y(Vertical::Center)
+    .width(Length::Fill)
+    .height(Length::Fixed(COMPARISON_HEADER_HEIGHT))
+    .into()
+}
+
+fn comparison_value_row(
+    label: impl Into<String>,
+    current: impl Into<String>,
+    reference: Option<String>,
+) -> Element<'static, CarSetupMessage> {
+    let current = current.into();
+    let changed = reference.as_ref() != Some(&current);
+    let difference = difference_label(&current, reference.as_deref());
+    row![
+        comparison_table_cell(label.into(), COMPARISON_LABEL_PORTION, false, changed),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(current, COMPARISON_VALUE_PORTION, false, changed),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(
+            reference.unwrap_or_else(|| "--".to_owned()),
+            COMPARISON_VALUE_PORTION,
+            false,
+            changed,
+        ),
+        rule::vertical(1).style(separator_style),
+        comparison_table_cell(difference, COMPARISON_DIFFERENCE_PORTION, false, changed,),
+    ]
+    .spacing(0)
+    .align_y(Vertical::Center)
+    .width(Length::Fill)
+    .height(Length::Fixed(COMPARISON_ROW_HEIGHT))
+    .into()
+}
+
+fn comparison_table_cell(
+    value: String,
+    portion: u16,
+    header: bool,
+    changed: bool,
+) -> Element<'static, CarSetupMessage> {
+    let mut value = text(value)
+        .size(if header { LABEL_SIZE } else { TABLE_BODY_SIZE })
+        .wrapping(text::Wrapping::WordOrGlyph);
+    if header {
+        value = value
+            .font(typography::SANS_SEMIBOLD)
+            .style(secondary_text_style);
+    } else if changed {
+        value = value
+            .font(typography::SANS_SEMIBOLD)
+            .style(changed_text_style);
+    } else {
+        value = value.font(typography::SANS);
+    }
+    container(value)
+        .padding(Padding {
+            right: TABLE_CELL_HORIZONTAL_PADDING,
+            left: TABLE_CELL_HORIZONTAL_PADDING,
+            ..Padding::ZERO
+        })
+        .width(Length::FillPortion(portion))
+        .height(Length::Fixed(if header {
+            COMPARISON_HEADER_HEIGHT
+        } else {
+            COMPARISON_ROW_HEIGHT
+        }))
+        .align_y(Vertical::Center)
+        .into()
+}
+
+fn difference_label(current: &str, reference: Option<&str>) -> String {
+    let Some(reference) = reference else {
+        return tr(Text::CurrentOnly).to_owned();
+    };
+    if current == reference {
+        return tr(Text::Unchanged).to_owned();
+    }
+    numeric_difference(current, reference).unwrap_or_else(|| tr(Text::Changed).to_owned())
+}
+
+fn numeric_difference(current: &str, reference: &str) -> Option<String> {
+    let (current, current_unit, current_precision) = number_and_unit(current)?;
+    let (reference, reference_unit, reference_precision) = number_and_unit(reference)?;
+    if current_unit != reference_unit {
+        return None;
+    }
+    let difference = current - reference;
+    let precision = current_precision.max(reference_precision).min(3);
+    let number = format!("{difference:+.*}", precision);
+    Some(if current_unit.is_empty() {
+        number
+    } else {
+        format!("{number} {current_unit}")
+    })
+}
+
+fn number_and_unit(value: &str) -> Option<(f64, &str, usize)> {
+    let value = value.trim();
+    let number_end = value
+        .char_indices()
+        .take_while(|(_, character)| {
+            character.is_ascii_digit() || matches!(character, '+' | '-' | '.')
+        })
+        .map(|(index, character)| index + character.len_utf8())
+        .last()?;
+    let number_text = &value[..number_end];
+    let number = number_text.parse::<f64>().ok()?;
+    let precision = number_text
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let unit = value[number_end..].trim();
+    if unit
+        .chars()
+        .any(|character| character.is_ascii_digit() || matches!(character, ',' | ';' | '(' | ')'))
+    {
+        return None;
+    }
+    Some((number, unit, precision))
+}
+
+fn setup_rows_view<'a>(
+    rows: Vec<&'a SetupRow>,
+    reference_values: Option<&BTreeMap<ComparisonFieldKey, String>>,
+) -> Element<'a, CarSetupMessage> {
     let mut content = column![];
+    let mut parents: Vec<&str> = Vec::new();
+    let mut occurrences = BTreeMap::<String, usize>::new();
+
+    if reference_values.is_some() {
+        content = content.push(comparison_table_header());
+    }
 
     for (index, setup_row) in rows.iter().copied().enumerate() {
         let display_depth = setup_row_depth(setup_row).saturating_sub(1);
         match setup_row {
-            SetupRow::Group { label, .. } => {
+            SetupRow::Group { label, depth } => {
+                parents.truncate(*depth);
+                parents.push(label);
                 if index > 0 {
                     content =
                         content.push(Space::new().height(if display_depth == 0 { 8 } else { 4 }));
                 }
                 content = content.push(setup_group_row(label, display_depth));
             },
-            SetupRow::Value { label, value, .. } => {
-                content = content.push(setup_value_row(label, value, display_depth));
+            SetupRow::Value {
+                label,
+                value,
+                depth,
+            } => {
+                parents.truncate(*depth);
+                let path = comparison_field_path(&parents, label);
+                let occurrence = occurrences.entry(path.clone()).or_default();
+                let key = ComparisonFieldKey {
+                    path,
+                    occurrence: *occurrence,
+                };
+                *occurrence += 1;
+
+                content = content.push(reference_values.map_or_else(
+                    || setup_value_row(label, value, display_depth),
+                    |reference_values| {
+                        comparison_value_row(
+                            label.clone(),
+                            value.clone(),
+                            reference_values.get(&key).cloned(),
+                        )
+                    },
+                ));
                 if rows
                     .get(index + 1)
                     .is_some_and(|row| matches!(row, SetupRow::Value { .. }))
@@ -1317,6 +1748,12 @@ fn secondary_text_style(theme: &Theme) -> text::Style {
     text::Style { color: Some(color) }
 }
 
+fn changed_text_style(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(theme.extended_palette().primary.base.color),
+    }
+}
+
 fn separator_style(theme: &Theme) -> rule::Style {
     rule::Style {
         color: theme.extended_palette().background.weaker.color,
@@ -1338,6 +1775,7 @@ fn setup_update_count(setup: &Value) -> Option<String> {
     })
 }
 
+#[cfg(test)]
 fn setup_sections(setup: &Value) -> Vec<SetupSection> {
     let setup = untagged(setup);
     let Value::Mapping(mapping) = setup else {
@@ -1351,14 +1789,12 @@ fn setup_sections(setup: &Value) -> Vec<SetupSection> {
     };
     let mut general_rows = Vec::new();
     let mut sections = Vec::new();
-
     for (key, value) in mapping {
         let raw_key = yaml_key(key);
         if raw_key.eq_ignore_ascii_case("UpdateCount") {
             continue;
         }
         let label = humanize_key(&raw_key);
-
         if is_collection(value) {
             let mut rows = Vec::new();
             append_collection_contents(&mut rows, value, 0);
@@ -1371,7 +1807,6 @@ fn setup_sections(setup: &Value) -> Vec<SetupSection> {
             append_labeled_value(&mut general_rows, label, value, 0);
         }
     }
-
     if !general_rows.is_empty() {
         sections.insert(
             0,
@@ -1381,6 +1816,77 @@ fn setup_sections(setup: &Value) -> Vec<SetupSection> {
                 rows: general_rows,
             },
         );
+    }
+    sections
+}
+
+fn setup_item_sections(setup: &Value) -> Vec<SetupSection> {
+    let setup = untagged(setup);
+    let Value::Mapping(mapping) = setup else {
+        let mut rows = Vec::new();
+        append_labeled_value(&mut rows, tr(Text::Value).to_owned(), setup, 0);
+        return vec![SetupSection {
+            key: VALUE_SETUP_CARD_KEY.to_owned(),
+            title: tr(Text::Setup).to_owned(),
+            rows,
+        }];
+    };
+    let mut sections = Vec::new();
+
+    for (key, value) in mapping {
+        let raw_key = yaml_key(key);
+        if raw_key.eq_ignore_ascii_case("UpdateCount") {
+            continue;
+        }
+        let label = humanize_key(&raw_key);
+
+        if let Value::Mapping(entries) = untagged(value) {
+            for (entry_key, entry_value) in entries {
+                let entry_raw_key = yaml_key(entry_key);
+                let entry_label = humanize_key(&entry_raw_key);
+                let key = format!("{SETUP_SECTION_CARD_PREFIX}{raw_key}:{entry_raw_key}");
+                if is_collection(entry_value) {
+                    let mut rows = Vec::new();
+                    append_collection_contents(&mut rows, entry_value, 0);
+                    if rows.is_empty() {
+                        rows.push(SetupRow::Value {
+                            label: tr(Text::Value).to_owned(),
+                            value: "--".to_owned(),
+                            depth: 0,
+                        });
+                    }
+                    sections.push(SetupSection {
+                        key,
+                        title: entry_label,
+                        rows,
+                    });
+                } else {
+                    let mut rows = Vec::new();
+                    append_labeled_value(&mut rows, tr(Text::Value).to_owned(), entry_value, 0);
+                    sections.push(SetupSection {
+                        key,
+                        title: entry_label,
+                        rows,
+                    });
+                }
+            }
+        } else if is_collection(value) {
+            let mut rows = Vec::new();
+            append_collection_contents(&mut rows, value, 0);
+            sections.push(SetupSection {
+                key: format!("{SETUP_SECTION_CARD_PREFIX}{raw_key}"),
+                title: label,
+                rows,
+            });
+        } else {
+            let mut rows = Vec::new();
+            append_labeled_value(&mut rows, tr(Text::Value).to_owned(), value, 0);
+            sections.push(SetupSection {
+                key: format!("{SETUP_SECTION_CARD_PREFIX}{raw_key}"),
+                title: label,
+                rows,
+            });
+        }
     }
 
     sections
@@ -1521,12 +2027,16 @@ fn non_blank(value: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use chiaro_irsdk::SessionInfo;
 
     use super::{
-        ComparisonFieldKey, MAX_VISUAL_INDENT_DEPTH, NESTED_INDENT, ROW_HORIZONTAL_PADDING,
-        SetupContentBlock, SetupCorner, SetupDataStatus, SetupRow, SetupViewData, humanize_key,
-        row_padding, setup_content_blocks, setup_corner, setup_corner_fields, setup_sections,
+        CardSide, ComparisonFieldKey, MAX_VISUAL_INDENT_DEPTH, NESTED_INDENT,
+        ROW_HORIZONTAL_PADDING, SetupContentBlock, SetupCorner, SetupDataStatus, SetupRow,
+        SetupSection, SetupViewData, flatten_comparison_values, humanize_key, row_padding,
+        setup_content_blocks, setup_content_blocks_for_display, setup_corner, setup_corner_fields,
+        setup_sections,
     };
 
     fn parse(yaml: &str) -> chiaro_irsdk::SessionInfoDocument {
@@ -1595,23 +2105,26 @@ CarSetup:
                 .iter()
                 .map(|section| section.title.as_str())
                 .collect::<Vec<_>>(),
-            ["Tires Aero", "Chassis"]
+            ["Left Front", "Front ARB"]
         );
         assert_eq!(
             data.sections
                 .iter()
                 .map(|section| section.key.as_str())
                 .collect::<Vec<_>>(),
-            ["setup:section:TiresAero", "setup:section:Chassis"]
+            [
+                "setup:section:TiresAero:LeftFront",
+                "setup:section:Chassis:FrontARB"
+            ]
         );
         assert!(data.sections[0].rows.iter().any(|row| matches!(
             row,
-            SetupRow::Value { label, value, depth: 1 }
+            SetupRow::Value { label, value, depth: 0 }
                 if label == "Cold Pressure" && value == "155 kPa"
         )));
         assert!(data.sections[0].rows.iter().any(|row| matches!(
             row,
-            SetupRow::Value { label, value, depth: 1 }
+            SetupRow::Value { label, value, depth: 0 }
                 if label == "Tread Remaining" && value == "100 %, 99 %, 98 %"
         )));
     }
@@ -1931,6 +2444,211 @@ Section:
     }
 
     #[test]
+    fn card_pairs_match_left_and_right_on_the_same_axle() {
+        let left_front =
+            SetupViewData::card_pair("setup:section:Chassis:LeftFront").expect("left front pair");
+        let right_front =
+            SetupViewData::card_pair("setup:section:Chassis:RightFront").expect("right front pair");
+        let left_rear =
+            SetupViewData::card_pair("setup:section:Chassis:LeftRear").expect("left rear pair");
+
+        assert_eq!(left_front.group, right_front.group);
+        assert_eq!(left_front.side, CardSide::Left);
+        assert_eq!(right_front.side, CardSide::Right);
+        assert_ne!(left_front.group, left_rear.group);
+        assert_eq!(
+            SetupViewData::card_pair("setup:section:Chassis:FrontARB"),
+            None
+        );
+    }
+
+    #[test]
+    fn reference_corner_sections_match_equivalent_sdk_aliases() {
+        let reference = SetupViewData {
+            sections: ["LF", "RF", "LR", "RR"]
+                .into_iter()
+                .map(|corner| SetupSection {
+                    key: format!("setup:section:Chassis:{corner}"),
+                    title: corner.to_owned(),
+                    rows: vec![SetupRow::Value {
+                        label: "Camber".to_owned(),
+                        value: "-3.5 deg".to_owned(),
+                        depth: 0,
+                    }],
+                })
+                .collect(),
+            ..SetupViewData::default()
+        };
+
+        for (current, reference_key) in [
+            ("LeftFront", "LF"),
+            ("RightFront", "RF"),
+            ("LeftRear", "LR"),
+            ("RightRear", "RR"),
+        ] {
+            let expected = format!("setup:section:Chassis:{reference_key}");
+            assert_eq!(
+                reference
+                    .comparison_section(&format!("setup:section:Chassis:{current}"))
+                    .map(|section| section.key.as_str()),
+                Some(expected.as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn reference_corner_group_rows_match_equivalent_sdk_aliases() {
+        let current = vec![
+            SetupRow::Group {
+                label: "Left Front".to_owned(),
+                depth: 0,
+            },
+            SetupRow::Value {
+                label: "Cold Pressure".to_owned(),
+                value: "155 kPa".to_owned(),
+                depth: 1,
+            },
+        ];
+        let reference = vec![
+            SetupRow::Group {
+                label: "LF".to_owned(),
+                depth: 0,
+            },
+            SetupRow::Value {
+                label: "Cold Pressure".to_owned(),
+                value: "156 kPa".to_owned(),
+                depth: 1,
+            },
+        ];
+
+        let current = flatten_comparison_values(&current);
+        let reference = flatten_comparison_values(&reference)
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(current[0].0.path, "LF · Cold Pressure");
+        assert_eq!(
+            reference.get(&current[0].0).map(String::as_str),
+            Some("156 kPa")
+        );
+    }
+
+    #[test]
+    fn reference_mode_keeps_corner_rows_in_the_comparison_path() {
+        let section = SetupSection {
+            key: "setup:section:TiresAero:Corners".to_owned(),
+            title: "Corners".to_owned(),
+            rows: vec![
+                SetupRow::Group {
+                    label: "Left Front".to_owned(),
+                    depth: 0,
+                },
+                SetupRow::Value {
+                    label: "Cold Pressure".to_owned(),
+                    value: "155 kPa".to_owned(),
+                    depth: 1,
+                },
+                SetupRow::Group {
+                    label: "Right Front".to_owned(),
+                    depth: 0,
+                },
+                SetupRow::Value {
+                    label: "Cold Pressure".to_owned(),
+                    value: "156 kPa".to_owned(),
+                    depth: 1,
+                },
+            ],
+        };
+
+        let blocks = setup_content_blocks_for_display(&section, true);
+
+        assert!(matches!(
+            blocks.as_slice(),
+            [SetupContentBlock::Rows(rows)] if rows.len() == section.rows.len()
+        ));
+    }
+
+    #[test]
+    fn comparison_rows_keep_intrinsic_height_inside_left_right_pairs() {
+        let header = super::comparison_table_header();
+        let value =
+            super::comparison_value_row("Cold Pressure", "155 kPa", Some("156 kPa".to_owned()));
+
+        assert_eq!(
+            header.as_widget().size().height,
+            iced::Length::Fixed(super::COMPARISON_HEADER_HEIGHT)
+        );
+        assert_eq!(
+            value.as_widget().size().height,
+            iced::Length::Fixed(super::COMPARISON_ROW_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn reference_comparison_keeps_each_current_setting_exactly_once() {
+        let current = SetupSection {
+            key: "setup:section:Chassis:LeftFront".to_owned(),
+            title: "Left Front".to_owned(),
+            rows: vec![
+                SetupRow::Value {
+                    label: "Ride Height".to_owned(),
+                    value: "55.2 mm".to_owned(),
+                    depth: 0,
+                },
+                SetupRow::Value {
+                    label: "Camber".to_owned(),
+                    value: "-3.5 deg".to_owned(),
+                    depth: 0,
+                },
+            ],
+        };
+        let reference = SetupSection {
+            key: current.key.clone(),
+            title: current.title.clone(),
+            rows: vec![
+                SetupRow::Value {
+                    label: "Ride Height".to_owned(),
+                    value: "56.0 mm".to_owned(),
+                    depth: 0,
+                },
+                SetupRow::Value {
+                    label: "Reference Only".to_owned(),
+                    value: "1".to_owned(),
+                    depth: 0,
+                },
+            ],
+        };
+
+        let current_rows = flatten_comparison_values(&current.rows);
+        let reference_rows = flatten_comparison_values(&reference.rows)
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(current_rows.len(), 2);
+        assert_eq!(current_rows[0].0.path, "Ride Height");
+        assert_eq!(
+            reference_rows.get(&current_rows[0].0).map(String::as_str),
+            Some("56.0 mm")
+        );
+        assert_eq!(
+            super::difference_label(
+                &current_rows[0].1,
+                reference_rows.get(&current_rows[0].0).map(String::as_str),
+            ),
+            "-0.8 mm"
+        );
+        assert_eq!(current_rows[1].0.path, "Camber");
+        assert_eq!(reference_rows.get(&current_rows[1].0), None);
+        assert_eq!(
+            super::difference_label(
+                &current_rows[1].1,
+                reference_rows.get(&current_rows[1].0).map(String::as_str),
+            ),
+            chiaro_i18n::tr(chiaro_i18n::Text::CurrentOnly)
+        );
+    }
+
+    #[test]
     fn empty_nested_collections_render_an_explicit_placeholder() {
         let setup: serde_yaml_ng::Value = serde_yaml_ng::from_str(
             r#"
@@ -1957,3 +2675,4 @@ Section:
         );
     }
 }
+use std::collections::BTreeMap;

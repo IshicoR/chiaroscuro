@@ -59,6 +59,12 @@ pub fn view(
             state.current,
             translations,
         ),
+        destination(
+            lucide::clipboard_check().size(ICON_SIZE),
+            Screen::Regulations,
+            state.current,
+            translations,
+        ),
     ]
     .width(Length::Fill)
     .spacing(DESTINATION_SPACING);
@@ -106,6 +112,7 @@ const fn screen_title(screen: Screen, translations: Translations) -> &'static st
     translations.get(match screen {
         Screen::Telemetry => Text::Telemetry,
         Screen::CarSetup => Text::CarSetup,
+        Screen::Regulations => Text::Regulations,
         Screen::Settings => Text::Settings,
     })
 }
