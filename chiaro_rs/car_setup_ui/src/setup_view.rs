@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chiaro_actions::{IbtLoadState, ReferenceIbtState};
 use chiaro_i18n::{Text, item_number, setup_label, setup_value, tr};
 #[cfg(test)]
@@ -2675,4 +2677,3 @@ Section:
         );
     }
 }
-use std::collections::BTreeMap;
