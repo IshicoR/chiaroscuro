@@ -36,16 +36,14 @@ transport is required.
 - Lightweight and fast performance
 - iRacing-focused vehicle, session, lap, and tyre data model
 
-## Contributing
+## Project Status
 
-Contributions are welcome! Please open an issue or submit a pull request for any bugs or feature requests.
+This repository documents an exploratory validation of a Rust and Iced-based
+iRacing telemetry viewer. The validation phase is complete, and the project is
+not accepting further development in this repository.
 
-## Implementation Status
-
-The desktop shell, Telemetry screen, and Car setup screen are under active
-development. Live iRacing SDK telemetry is available on Windows through the
-in-process shared-memory client. IBT recordings remain available without a live
-iRacing connection.
+The next iteration will be rebuilt from scratch on Codeberg. This repository is
+retained as an archived record of the validation work.
 
 ## License
 
